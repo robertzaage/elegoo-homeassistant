@@ -25,7 +25,8 @@ Remove the upstream repository from HACS first; both use the domain
 `main`, merges each new upstream release into `stable`, runs upstream's lint
 and tests, and only then pushes. A merge conflict or a failing check stops the
 run before anything is pushed. Feature changes reach `stable` only by an
-explicit merge, after they were tested on a printer.
+explicit merge after lint and tests pass, and stay behind an option that is
+off by default until they were tested on a printer.
 
 The workflows inherited from upstream (releases, review bots) stay disabled in
 this fork.
