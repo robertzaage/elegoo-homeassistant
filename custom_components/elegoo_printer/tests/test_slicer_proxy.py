@@ -17,39 +17,49 @@ import pytest
 
 from custom_components.elegoo_printer.mqtt.server import ElegooMQTTBroker
 from custom_components.elegoo_printer.mqtt.slicer_proxy import (
+    SLICER_NAME_SUFFIX,
     SlicerBroker,
+    SlicerIdentity,
     SlicerProxy,
     _preview,
+    alias_id,
     parse_connect_message,
-    rewrite_discovery_reply,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 MAINBOARD_ID = "428fa2e552d20100"
+CONNECTION_ID = "f25273b12b094c5a8b9513a30ca60049"
+ALIAS_ID = alias_id(MAINBOARD_ID)
 PRINTER_IP = "192.0.2.10"
 PROXY_IP = "192.0.2.20"
 SLICER_IP = "192.0.2.30"
 
 
-def _topic(kind: str) -> str:
-    return f"/sdcp/{kind}/{MAINBOARD_ID}"
+def _topic(kind: str, mainboard_id: str = MAINBOARD_ID) -> str:
+    return f"/sdcp/{kind}/{mainboard_id}"
 
 
-def _request(cmd: int, request_id: str, data: dict[str, Any] | None = None) -> str:
+def _request(
+    cmd: int,
+    request_id: str,
+    data: dict[str, Any] | None = None,
+    mainboard_id: str = ALIAS_ID,
+) -> str:
+    """Build a request frame as a slicer addresses it (to the proxy's identity)."""
     return json.dumps(
         {
-            "Id": "frame-1",
+            "Id": alias_id(CONNECTION_ID),
             "Data": {
                 "Cmd": cmd,
                 "Data": data or {},
                 "RequestID": request_id,
-                "MainboardID": MAINBOARD_ID,
+                "MainboardID": mainboard_id,
                 "TimeStamp": 0,
                 "From": 1,
             },
-            "Topic": f"sdcp/request/{MAINBOARD_ID}",
+            "Topic": f"sdcp/request/{mainboard_id}",
         }
     )
 
@@ -79,13 +89,22 @@ def test_parse_connect_message(message: str, expected: SlicerBroker | None) -> N
     assert parse_connect_message(message, SLICER_IP) == expected
 
 
-def test_rewrite_discovery_reply_points_at_proxy() -> None:
-    """Only MainboardIP changes; everything else is relayed as the printer sent it."""
-    reply = {
-        "Id": "abc",
+def test_alias_id_is_stable_distinct_and_shaped_like_the_original() -> None:
+    """Slicers remember printers by ID, so the stand-in must not change."""
+    assert alias_id(MAINBOARD_ID) == alias_id(MAINBOARD_ID)
+    assert alias_id(MAINBOARD_ID) != MAINBOARD_ID
+    assert len(alias_id(MAINBOARD_ID)) == len(MAINBOARD_ID)
+    assert len(alias_id("a" * 100)) == 100
+    int(alias_id(CONNECTION_ID), 16)  # hex, like the printer's IDs
+
+
+def _printer_discovery_answer() -> dict[str, Any]:
+    return {
+        "Id": CONNECTION_ID,
         "Data": {
             "Attributes": {
                 "Name": "Mars 4 Ultra",
+                "MachineName": "ELEGOO Mars 4 Ultra",
                 "MainboardIP": PRINTER_IP,
                 "MainboardID": MAINBOARD_ID,
                 "ProtocolVersion": "V1.0.0",
@@ -93,19 +112,45 @@ def test_rewrite_discovery_reply_points_at_proxy() -> None:
             "Status": {"CurrentStatus": [0]},
         },
     }
-    rewritten = json.loads(
-        rewrite_discovery_reply(json.dumps(reply).encode(), PROXY_IP)
+
+
+def test_discovery_answer_presents_a_separate_printer() -> None:
+    """Own IDs and name, Home Assistant's address; everything else unchanged."""
+    proxy = _proxy()
+    answer = json.loads(
+        proxy.discovery_answer(json.dumps(_printer_discovery_answer()).encode())
     )
-    reply["Data"]["Attributes"]["MainboardIP"] = PROXY_IP
-    assert rewritten == reply
+    attributes = answer["Data"]["Attributes"]
+    assert answer["Id"] == alias_id(CONNECTION_ID)
+    assert attributes["MainboardID"] == ALIAS_ID
+    assert attributes["MainboardIP"] == PROXY_IP
+    assert attributes["Name"] == f"Mars 4 Ultra{SLICER_NAME_SUFFIX}"
+    assert attributes["MachineName"] == "ELEGOO Mars 4 Ultra"
+    assert answer["Data"]["Status"] == {"CurrentStatus": [0]}
 
 
 @pytest.mark.parametrize(
     "raw", [b"not json", b'{"Data": {}}', b'{"Data": {"Attributes": 1}}']
 )
-def test_rewrite_discovery_reply_rejects_other_payloads(raw: bytes) -> None:
+def test_discovery_answer_rejects_other_payloads(raw: bytes) -> None:
     """Anything that is not a printer's discovery answer is not relayed."""
-    assert rewrite_discovery_reply(raw, PROXY_IP) is None
+    assert _proxy().discovery_answer(raw) is None
+
+
+def test_identity_round_trip() -> None:
+    """IDs are translated both ways, also inside longer strings."""
+    identity = SlicerIdentity(MAINBOARD_ID, PROXY_IP)
+    identity.learn(CONNECTION_ID)
+    printer_frame = {
+        "Id": CONNECTION_ID,
+        "Data": {"MainboardID": MAINBOARD_ID, "Status": {"CurrentStatus": [1]}},
+        "Topic": f"sdcp/status/{MAINBOARD_ID}",
+    }
+    for_slicer = json.loads(identity.for_slicer(json.dumps(printer_frame)))
+    assert MAINBOARD_ID not in json.dumps(for_slicer)
+    assert CONNECTION_ID not in json.dumps(for_slicer)
+    assert for_slicer["Topic"] == f"sdcp/status/{ALIAS_ID}"
+    assert json.loads(identity.for_printer(json.dumps(for_slicer))) == printer_frame
 
 
 def test_preview_masks_credentials() -> None:
@@ -151,12 +196,9 @@ async def test_discovery_relays_printer_answer(monkeypatch: pytest.MonkeyPatch) 
     proxy = _proxy()
     transport = _FakeTransport()
     proxy._transport = transport  # type: ignore[assignment]
-    answer = {
-        "Data": {"Attributes": {"MainboardIP": PRINTER_IP, "MainboardID": MAINBOARD_ID}}
-    }
 
     async def _query() -> bytes:
-        return json.dumps(answer).encode()
+        return json.dumps(_printer_discovery_answer()).encode()
 
     monkeypatch.setattr(proxy, "_query_printer", _query)
     proxy._on_datagram(b"M99999", (SLICER_IP, 50000))
@@ -165,7 +207,9 @@ async def test_discovery_relays_printer_answer(monkeypatch: pytest.MonkeyPatch) 
     assert len(transport.sent) == 1
     data, addr = transport.sent[0]
     assert addr == (SLICER_IP, 50000)
-    assert json.loads(data)["Data"]["Attributes"]["MainboardIP"] == PROXY_IP
+    attributes = json.loads(data)["Data"]["Attributes"]
+    assert attributes["MainboardIP"] == PROXY_IP
+    assert attributes["MainboardID"] == ALIAS_ID
 
 
 async def test_discovery_uses_cached_answer_when_printer_is_silent(
@@ -247,25 +291,31 @@ async def test_bridge_passes_traffic_both_ways(brokers) -> None:
         ) as slicer,
     ):
         await printer.subscribe(_topic("request"))
-        await slicer.subscribe(_topic("status"))
-        await slicer.subscribe(_topic("response"))
+        await slicer.subscribe(_topic("status", ALIAS_ID))
+        await slicer.subscribe(_topic("response", ALIAS_ID))
 
         proxy._start_bridge(SlicerBroker("127.0.0.1", slicer_broker.port))
         await _wait_for(lambda: proxy.slicer_connected)
         await asyncio.sleep(0.2)  # let the bridge's subscriptions land
 
         # Slicer → printer
-        await slicer.publish(_topic("request"), _request(1, "req-attr"))
+        await slicer.publish(_topic("request", ALIAS_ID), _request(1, "req-attr"))
         topic, frame = await _next(printer)
         assert topic == _topic("request")
         assert frame["Data"]["RequestID"] == "req-attr"
+        assert frame["Data"]["MainboardID"] == MAINBOARD_ID
+        assert frame["Topic"] == f"sdcp/request/{MAINBOARD_ID}"
 
         # Printer → slicer
-        status = {"Id": "s", "Data": {"Status": {"CurrentStatus": [0]}}}
+        status = {
+            "Id": "s",
+            "Data": {"Status": {"CurrentStatus": [0]}, "MainboardID": MAINBOARD_ID},
+        }
         await printer.publish(_topic("status"), json.dumps(status))
         topic, frame = await _next(slicer)
-        assert topic == _topic("status")
-        assert frame == status
+        assert topic == _topic("status", ALIAS_ID)
+        assert frame["Data"]["MainboardID"] == ALIAS_ID
+        assert frame["Data"]["Status"] == status["Data"]["Status"]
 
         await proxy.stop()
         assert not proxy.slicer_connected
@@ -283,22 +333,24 @@ async def test_bridge_answers_period_and_disconnect_itself(brokers) -> None:
         ) as slicer,
     ):
         await printer.subscribe(_topic("request"))
-        await slicer.subscribe(_topic("response"))
+        await slicer.subscribe(_topic("response", ALIAS_ID))
 
         proxy._start_bridge(SlicerBroker("127.0.0.1", slicer_broker.port))
         await _wait_for(lambda: proxy.slicer_connected)
         await asyncio.sleep(0.2)
 
         await slicer.publish(
-            _topic("request"), _request(512, "req-period", {"TimePeriod": 5000})
+            _topic("request", ALIAS_ID),
+            _request(512, "req-period", {"TimePeriod": 5000}),
         )
         topic, frame = await _next(slicer)
-        assert topic == _topic("response")
+        assert topic == _topic("response", ALIAS_ID)
+        assert frame["Data"]["MainboardID"] == ALIAS_ID
         assert frame["Data"]["Cmd"] == 512
         assert frame["Data"]["RequestID"] == "req-period"
         assert frame["Data"]["Data"] == {"Ack": 0}
 
-        await slicer.publish(_topic("request"), _request(64, "req-bye"))
+        await slicer.publish(_topic("request", ALIAS_ID), _request(64, "req-bye"))
         topic, frame = await _next(slicer)
         assert frame["Data"]["Cmd"] == 64
         await _wait_for(lambda: not proxy.slicer_connected)
@@ -322,11 +374,16 @@ async def test_bridge_replays_latest_state_to_a_new_slicer(brokers) -> None:
     async with aiomqtt.Client(
         "127.0.0.1", slicer_broker.port, identifier="chitubox"
     ) as slicer:
-        await slicer.subscribe(_topic("attributes"))
-        await slicer.subscribe(_topic("status"))
+        await slicer.subscribe(_topic("attributes", ALIAS_ID))
+        await slicer.subscribe(_topic("status", ALIAS_ID))
         proxy._start_bridge(SlicerBroker("127.0.0.1", slicer_broker.port))
 
-        received = {(await _next(slicer))[0], (await _next(slicer))[0]}
-        assert received == {_topic("attributes"), _topic("status")}
+        received = dict([await _next(slicer), await _next(slicer)])
+        assert set(received) == {
+            _topic("attributes", ALIAS_ID),
+            _topic("status", ALIAS_ID),
+        }
+        name = received[_topic("attributes", ALIAS_ID)]["Data"]["Attributes"]["Name"]
+        assert name == f"Mars{SLICER_NAME_SUFFIX}"
 
         await proxy.stop()
