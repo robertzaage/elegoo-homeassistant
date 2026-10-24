@@ -55,6 +55,7 @@ if TYPE_CHECKING:
 
     from custom_components.elegoo_printer.sdcp.models.file_info import PrinterFile
 
+    from .mqtt.slicer_proxy import SlicerProxy
     from .sdcp.models.enums import ElegooFan
     from .sdcp.models.print_history_detail import (
         PrintHistoryDetail,
@@ -130,6 +131,8 @@ class ElegooPrinterApiClient:
         self._hass_client = get_async_client(hass)
         self.server: ElegooPrinterServer | None = None
         self.mqtt_broker: ElegooMQTTBroker | None = None
+        # Set by async_setup_entry when the slicer proxy option is on.
+        self.slicer_proxy: SlicerProxy | None = None
         self.hass: HomeAssistant = hass
         self._config_entry = config_entry
 

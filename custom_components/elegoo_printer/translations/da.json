@@ -46,13 +46,15 @@
           "external_ip": "Ekstern adresse (valgfrit, til avancerede netværksopsætninger)",
           "mqtt_external_host": "Ekstern MQTT broker-vært (valgfrit)",
           "mqtt_external_port": "Ekstern MQTT broker-port (valgfrit)",
-          "allow_printer_offline": "Printeren er ofte slukket"
+          "allow_printer_offline": "Printeren er ofte slukket",
+          "slicer_proxy_enabled": "Del printeren med slicere (ChiTuBox)"
         },
         "data_description": {
           "external_ip": "Overskriv automatisk opdaget adresse med en IP-adresse eller hostname. Lad stå tomt for automatisk detektering. Brug til Kubernetes/Docker opsætning eller når du er bag en omvendt proxy. Portene 3030 og 3031 vil blive tilføjet automatisk.",
           "mqtt_external_host": "Peg på en eksisterende MQTT broker (f.eks. Mosquitto) i stedet for at starte den indbyggede. Lad stå tomt for at bruge den indbyggede broker.",
           "mqtt_external_port": "Port for den eksterne MQTT broker specificeret ovenfor. Standard til 1883, hvis den lades tom.",
-          "allow_printer_offline": "Gennemfør opsætningen, selv når printeren ikke kan nås. Alle enheder forbliver \"Unavailable\" (utilgængelige), indtil den tændes, i stedet for at integrationen rapporterer en mislykket opsætning. Bemærk: en forkert IP-adresse eller en utilgængelig printer ligner derefter præcis en slukket printer."
+          "allow_printer_offline": "Gennemfør opsætningen, selv når printeren ikke kan nås. Alle enheder forbliver \"Unavailable\" (utilgængelige), indtil den tændes, i stedet for at integrationen rapporterer en mislykket opsætning. Bemærk: en forkert IP-adresse eller en utilgængelig printer ligner derefter præcis en slukket printer.",
+          "slicer_proxy_enabled": "Printeren accepterer kun én forbindelse, som Home Assistant holder. Når dette er slået til, tilbyder Home Assistant også printeren til slicere på dit netværk: ChiTuBox finder den på Home Assistants adresse og kan sende og starte job, mens Home Assistant fortsat overvåger."
         }
       },
       "websocket_options": {

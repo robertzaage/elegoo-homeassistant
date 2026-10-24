@@ -36,6 +36,7 @@ from .const import (
     CONF_PROXY_ENABLED,
     CONF_PROXY_HOST,
     CONF_SERIAL,
+    CONF_SLICER_PROXY_ENABLED,
     CONFIG_VERSION_5,
     DOMAIN,
     LOGGER,
@@ -1602,6 +1603,9 @@ class ElegooOptionsFlowHandler(config_entries.OptionsFlow):
             vol.Required(
                 CONF_ALLOW_PRINTER_OFFLINE, default=False
             ): selector.BooleanSelector(selector.BooleanSelectorConfig()),
+            vol.Required(
+                CONF_SLICER_PROXY_ENABLED, default=False
+            ): selector.BooleanSelector(selector.BooleanSelectorConfig()),
         }
 
         async def _process_mqtt_options_input(
@@ -1650,6 +1654,9 @@ class ElegooOptionsFlowHandler(config_entries.OptionsFlow):
             printer_data = printer.to_dict()
             printer_data[CONF_ALLOW_PRINTER_OFFLINE] = bool(
                 user_input.get(CONF_ALLOW_PRINTER_OFFLINE, False)
+            )
+            printer_data[CONF_SLICER_PROXY_ENABLED] = bool(
+                user_input.get(CONF_SLICER_PROXY_ENABLED, False)
             )
 
             return self.async_create_entry(

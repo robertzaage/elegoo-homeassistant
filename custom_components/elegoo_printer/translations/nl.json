@@ -46,13 +46,15 @@
           "external_ip": "Extern adres (optioneel, voor geavanceerde netwerkopstellingen)",
           "mqtt_external_host": "Externe MQTT-broker-host (optioneel)",
           "mqtt_external_port": "Externe MQTT-brokerpoort (optioneel)",
-          "allow_printer_offline": "Printer is vaak uitgeschakeld"
+          "allow_printer_offline": "Printer is vaak uitgeschakeld",
+          "slicer_proxy_enabled": "Printer delen met slicers (ChiTuBox)"
         },
         "data_description": {
           "external_ip": "Overschrijf automatisch gedetecteerd adres met een IP-adres of hostnaam. Laat leeg voor automatische detectie. Gebruik voor Kubernetes/Docker-opstellingen of achter een omgekeerde proxy. Poorten 3030 en 3031 worden automatisch toegevoegd.",
           "mqtt_external_host": "Wijs naar een bestaande MQTT-broker (bijv. Mosquitto) in plaats van de ingebouwde op te starten. Leeg laten om de ingebouwde broker te gebruiken.",
           "mqtt_external_port": "Poort voor de hierboven opgegeven externe MQTT-broker. Standaard 1883 als leeg gelaten.",
-          "allow_printer_offline": "Voltooi de installatie ook als de printer niet bereikbaar is. Alle entiteiten blijven \"Unavailable\" (niet beschikbaar) tot hij wordt ingeschakeld, in plaats van dat de integratie een mislukte installatie meldt. Let op: een verkeerd IP-adres of een onbereikbare printer lijkt dan exact op een uitgeschakelde printer."
+          "allow_printer_offline": "Voltooi de installatie ook als de printer niet bereikbaar is. Alle entiteiten blijven \"Unavailable\" (niet beschikbaar) tot hij wordt ingeschakeld, in plaats van dat de integratie een mislukte installatie meldt. Let op: een verkeerd IP-adres of een onbereikbare printer lijkt dan exact op een uitgeschakelde printer.",
+          "slicer_proxy_enabled": "De printer accepteert maar één verbinding, en die houdt Home Assistant vast. Met deze optie biedt Home Assistant de printer ook aan slicers in je netwerk aan: ChiTuBox vindt hem op het adres van Home Assistant en kan opdrachten verzenden en starten terwijl Home Assistant blijft monitoren."
         }
       },
       "websocket_options": {

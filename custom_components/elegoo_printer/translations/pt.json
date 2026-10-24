@@ -46,13 +46,15 @@
           "external_ip": "Endereço externo (opcional, para configurações de rede avançadas)",
           "mqtt_external_host": "Host do broker MQTT externo (opcional)",
           "mqtt_external_port": "Porta do broker MQTT externo (opcional)",
-          "allow_printer_offline": "A impressora fica desligada com frequência"
+          "allow_printer_offline": "A impressora fica desligada com frequência",
+          "slicer_proxy_enabled": "Partilhar a impressora com slicers (ChiTuBox)"
         },
         "data_description": {
           "external_ip": "Substituir o endereço detectado automaticamente com um endereço IP ou nome de host. Deixe em branco para detecção automática. Use para configurações Kubernetes/Docker ou quando estiver atrás de um proxy reverso. As portas 3030 e 3031 serão adicionadas automaticamente.",
           "mqtt_external_host": "Aponte para um broker MQTT existente (por exemplo Mosquitto) em vez de iniciar o embutido. Deixe em branco para usar o broker embutido.",
           "mqtt_external_port": "Porta para o broker MQTT externo especificado acima. O valor padrão é 1883 se deixado em branco.",
-          "allow_printer_offline": "Conclua a configuração mesmo quando a impressora estiver inacessível. Todas as entidades ficam \"Unavailable\" (indisponíveis) até ela ser ligada, em vez de a integração reportar uma falha na configuração. Nota: um endereço IP errado ou uma impressora inacessível parece exatamente com uma impressora desligada."
+          "allow_printer_offline": "Conclua a configuração mesmo quando a impressora estiver inacessível. Todas as entidades ficam \"Unavailable\" (indisponíveis) até ela ser ligada, em vez de a integração reportar uma falha na configuração. Nota: um endereço IP errado ou uma impressora inacessível parece exatamente com uma impressora desligada.",
+          "slicer_proxy_enabled": "A impressora aceita apenas uma ligação, que o Home Assistant mantém. Com esta opção, o Home Assistant também disponibiliza a impressora aos slicers da sua rede: o ChiTuBox encontra-a no endereço do Home Assistant e pode enviar e iniciar trabalhos enquanto o Home Assistant continua a monitorizar."
         }
       },
       "websocket_options": {
