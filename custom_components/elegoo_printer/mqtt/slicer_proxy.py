@@ -6,18 +6,22 @@ broker connection. Home Assistant's embedded broker keeps it, so a slicer such
 as ChiTuBox that asks the printer to connect to its own broker (M66666) is
 refused with "connection limit is reached".
 
-The proxy answers the slicer in the printer's place:
+The proxy offers the printer to slicers a second time, under its own identity:
 
 1. Discovery: a slicer broadcasts ``M99999`` to UDP port 3000. The proxy asks
-   the real printer the same question and relays its answer, with
-   ``MainboardIP`` pointing at Home Assistant.
+   the real printer the same question and relays its answer as a separate
+   printer: own ``MainboardID`` and connection ``Id`` (stable stand-ins derived
+   from the real ones), the name suffixed with "(Home Assistant)" and
+   ``MainboardIP`` pointing at Home Assistant. With the printer's own IDs,
+   ChiTuBox merges both answers into one entry and keeps the real printer.
 2. Connect: the slicer sends ``M66666 <host> <port> [user] [password]`` to that
    address. The proxy then connects to the slicer's broker as the printer
    would.
 3. Bridge: requests from the slicer go to the printer through the embedded
    broker; everything the printer publishes reaches Home Assistant and the
-   slicer alike. File transfers need no help: the printer downloads the file
-   from the URL the slicer sends.
+   slicer alike. Identifiers are translated on the way, so the slicer only
+   ever sees the stand-ins and the printer only its real IDs. File transfers
+   need no help: the printer downloads the file from the URL the slicer sends.
 
 Two requests are answered by the proxy instead of the printer, because they
 would change the printer's link for Home Assistant too: ``Disconnect`` (64)
@@ -29,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import re
@@ -61,6 +66,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 CONNECT_MESSAGE = "M66666"
+SLICER_NAME_SUFFIX = " (Home Assistant)"
 PRINTER_QUERY_TIMEOUT = 2.0
 DISCOVERY_RATE_LIMIT_SECONDS = 1.0
 LOG_PREVIEW_LENGTH = 600
@@ -85,6 +91,21 @@ def _preview(payload: str) -> str:
     if len(masked) > LOG_PREVIEW_LENGTH:
         return f"{masked[:LOG_PREVIEW_LENGTH]}… ({len(masked)} chars)"
     return masked
+
+
+def alias_id(value: str) -> str:
+    """
+    Return the stand-in the slicer sees for a printer identifier.
+
+    Stable across restarts (slicers remember printers by ID), same length and
+    hex alphabet as the printer's IDs, and never equal to the original.
+    """
+    digest = ""
+    seed = f"elegoo-slicer-proxy:{value}"
+    while len(digest) < len(value):
+        seed = hashlib.sha256(seed.encode()).hexdigest()
+        digest += seed
+    return digest[: len(value)]
 
 
 @dataclass(frozen=True)
@@ -124,17 +145,71 @@ def parse_connect_message(message: str, source_ip: str) -> SlicerBroker | None:
     )
 
 
-def rewrite_discovery_reply(reply: bytes, proxy_ip: str) -> bytes | None:
-    """Point a printer's M99999 answer at the proxy; None if it is not one."""
-    try:
-        payload = json.loads(reply)
-        attributes = payload["Data"]["Attributes"]
-    except (ValueError, KeyError, TypeError):
-        return None
-    if not isinstance(attributes, dict):
-        return None
-    attributes["MainboardIP"] = proxy_ip
-    return json.dumps(payload).encode()
+class SlicerIdentity:
+    """Translates between the printer's identity and the one slicers see."""
+
+    def __init__(self, mainboard_id: str, proxy_ip: str) -> None:
+        """Start with the MainboardID; the connection Id is learned later."""
+        self.mainboard_id = mainboard_id
+        self.alias_mainboard_id = alias_id(mainboard_id)
+        self.proxy_ip = proxy_ip
+        self._to_alias: dict[str, str] = {mainboard_id: self.alias_mainboard_id}
+        self._to_real: dict[str, str] = {self.alias_mainboard_id: mainboard_id}
+
+    def learn(self, value: Any) -> None:
+        """Add another printer identifier (the connection ``Id``)."""
+        if isinstance(value, str) and value and value not in self._to_alias:
+            alias = alias_id(value)
+            self._to_alias[value] = alias
+            self._to_real[alias] = value
+
+    def for_slicer(self, payload: str) -> str:
+        """Rewrite a printer message the way the slicer must see it."""
+        return self._translate(payload, to_slicer=True)
+
+    def for_printer(self, payload: str) -> str:
+        """Rewrite a slicer message the way the printer must see it."""
+        return self._translate(payload, to_slicer=False)
+
+    def _translate(self, payload: str, *, to_slicer: bool) -> str:
+        try:
+            frame = json.loads(payload)
+        except ValueError:
+            mapping = self._to_alias if to_slicer else self._to_real
+            for old, new in mapping.items():
+                payload = payload.replace(old, new)
+            return payload
+        return json.dumps(self._walk(frame, to_slicer=to_slicer, parent=""))
+
+    def _walk(self, value: Any, *, to_slicer: bool, parent: str) -> Any:
+        if isinstance(value, dict):
+            result = {}
+            for key, item in value.items():
+                if to_slicer and key == "MainboardIP":
+                    result[key] = self.proxy_ip
+                elif (
+                    to_slicer
+                    and key == "Name"
+                    and parent == "Attributes"
+                    and isinstance(item, str)
+                    and not item.endswith(SLICER_NAME_SUFFIX)
+                ):
+                    result[key] = f"{item}{SLICER_NAME_SUFFIX}"
+                else:
+                    result[key] = self._walk(item, to_slicer=to_slicer, parent=key)
+            return result
+        if isinstance(value, list):
+            return [
+                self._walk(item, to_slicer=to_slicer, parent=parent) for item in value
+            ]
+        if isinstance(value, str):
+            # IDs also appear inside strings ("Topic": "sdcp/request/<id>").
+            # They are long random hex strings, so replacing substrings is safe.
+            mapping = self._to_alias if to_slicer else self._to_real
+            for old, new in mapping.items():
+                value = value.replace(old, new)
+            return value
+        return value
 
 
 class _UdpProtocol(asyncio.DatagramProtocol):
@@ -183,6 +258,7 @@ class SlicerProxy:
         self.broker_host = broker_host
         self.broker_port = broker_port
         self.logger = logger
+        self.identity = SlicerIdentity(mainboard_id, proxy_ip)
         self._transport: asyncio.DatagramTransport | None = None
         self._bridge_task: asyncio.Task[None] | None = None
         self._tasks: set[asyncio.Task[Any]] = set()
@@ -196,9 +272,12 @@ class SlicerProxy:
         """Return True while a slicer is bridged to the printer."""
         return self.slicer is not None
 
-    def _topic(self, kind: str) -> str:
+    def _printer_topic(self, kind: str) -> str:
         # Leading slash: matches the printer's own topics.
         return f"/{TOPIC_PREFIX}/{kind}/{self.mainboard_id}"
+
+    def _slicer_topic(self, kind: str) -> str:
+        return f"/{TOPIC_PREFIX}/{kind}/{self.identity.alias_mainboard_id}"
 
     async def start(self) -> bool:
         """Listen for slicers on UDP 3000; False if the port is taken."""
@@ -220,11 +299,12 @@ class SlicerProxy:
         self._transport = transport  # type: ignore[assignment]
         self.logger.info(
             "Slicer proxy for printer %s listening on UDP %s (printer at %s,"
-            " offered to slicers as %s)",
+            " offered to slicers as %s with ID %s)",
             self.mainboard_id,
             DISCOVERY_PORT,
             self.printer_ip,
             self.proxy_ip,
+            self.identity.alias_mainboard_id,
         )
         return True
 
@@ -291,6 +371,18 @@ class SlicerProxy:
                 _preview(message),
             )
 
+    def discovery_answer(self, reply: bytes) -> bytes | None:
+        """Turn the printer's M99999 answer into the proxy's; None if invalid."""
+        try:
+            payload = json.loads(reply)
+            attributes = payload["Data"]["Attributes"]
+        except (ValueError, KeyError, TypeError):
+            return None
+        if not isinstance(attributes, dict):
+            return None
+        self.identity.learn(payload.get("Id"))
+        return self.identity.for_slicer(json.dumps(payload)).encode()
+
     async def _answer_discovery(self, addr: tuple[str, int]) -> None:
         reply = await self._query_printer()
         if reply is not None:
@@ -301,14 +393,14 @@ class SlicerProxy:
         else:
             self.logger.debug("Slicer proxy: printer silent, no answer to relay")
             return
-        rewritten = rewrite_discovery_reply(reply, self.proxy_ip)
-        if rewritten is None or self._transport is None:
+        answer = self.discovery_answer(reply)
+        if answer is None or self._transport is None:
             return
-        self._transport.sendto(rewritten, addr)
+        self._transport.sendto(answer, addr)
         self.logger.debug(
             "Slicer proxy: answered discovery from %s: %s",
             addr[0],
-            _preview(rewritten.decode()),
+            _preview(answer.decode()),
         )
 
     async def _query_printer(self) -> bytes | None:
@@ -367,7 +459,7 @@ class SlicerProxy:
                     port=broker.port,
                     username=broker.username,
                     password=broker.password,
-                    identifier=self.mainboard_id,
+                    identifier=self.identity.alias_mainboard_id,
                     keepalive=MQTT_KEEPALIVE,
                 ) as slicer_side,
             ):
@@ -379,12 +471,15 @@ class SlicerProxy:
                     self.mainboard_id,
                 )
                 for kind in PRINTER_TOPICS:
-                    await printer_side.subscribe(self._topic(kind))
-                await slicer_side.subscribe(self._topic(TOPIC_REQUEST))
+                    await printer_side.subscribe(self._printer_topic(kind))
+                await slicer_side.subscribe(self._slicer_topic(TOPIC_REQUEST))
                 # A printer publishes its attributes and status on connect.
                 for kind in (TOPIC_ATTRIBUTES, TOPIC_STATUS):
                     if kind in self._latest:
-                        await slicer_side.publish(self._topic(kind), self._latest[kind])
+                        await slicer_side.publish(
+                            self._slicer_topic(kind),
+                            self.identity.for_slicer(self._latest[kind]),
+                        )
                 await self._pump(printer_side, slicer_side)
         except aiomqtt.MqttError as err:
             self.logger.info("Slicer proxy: slicer bridge closed: %s", err)
@@ -426,36 +521,42 @@ class SlicerProxy:
             topic = str(message.topic)
             payload = _as_text(message.payload)
             kind = topic.split("/")[2] if topic.count("/") >= 3 else ""  # noqa: PLR2004
+            if kind not in PRINTER_TOPICS:
+                continue
             if kind in (TOPIC_ATTRIBUTES, TOPIC_STATUS):
                 self._latest[kind] = payload
+            translated = self.identity.for_slicer(payload)
             self.logger.debug(
-                "Slicer proxy: printer → slicer %s %s", topic, _preview(payload)
+                "Slicer proxy: printer → slicer %s %s", kind, _preview(translated)
             )
-            await slicer_side.publish(topic, payload)
+            await slicer_side.publish(self._slicer_topic(kind), translated)
 
     async def _slicer_to_printer(
         self, slicer_side: aiomqtt.Client, printer_side: aiomqtt.Client
     ) -> None:
         async for message in slicer_side.messages:
-            topic = str(message.topic)
             payload = _as_text(message.payload)
             self.logger.debug(
-                "Slicer proxy: slicer → printer %s %s", topic, _preview(payload)
+                "Slicer proxy: slicer → printer %s %s",
+                message.topic,
+                _preview(payload),
             )
             request = _parse_request(payload)
             cmd = request.get("Cmd") if request else None
             if cmd in LOCALLY_ANSWERED_CMDS and request is not None:
                 await slicer_side.publish(
-                    self._topic(TOPIC_RESPONSE), self._ack(payload, request)
+                    self._slicer_topic(TOPIC_RESPONSE), self._ack(payload, request)
                 )
                 self.logger.debug("Slicer proxy: answered command %s locally", cmd)
                 if cmd == CMD_DISCONNECT:
                     return
                 continue
-            await printer_side.publish(self._topic(TOPIC_REQUEST), payload)
+            await printer_side.publish(
+                self._printer_topic(TOPIC_REQUEST), self.identity.for_printer(payload)
+            )
 
     def _ack(self, raw: str, request: dict[str, Any]) -> str:
-        """Build the success response the printer would send for a request."""
+        """Build the success response the printer would send, as the slicer sees it."""
         try:
             frame_id = json.loads(raw).get("Id", "")
         except ValueError:
@@ -467,7 +568,7 @@ class SlicerProxy:
                     "Cmd": request.get("Cmd"),
                     "Data": {"Ack": 0},
                     "RequestID": request.get("RequestID", ""),
-                    "MainboardID": self.mainboard_id,
+                    "MainboardID": self.identity.alias_mainboard_id,
                     "TimeStamp": int(time.time()),
                 },
             }
