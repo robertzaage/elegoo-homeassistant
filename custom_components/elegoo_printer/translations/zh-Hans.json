@@ -261,6 +261,18 @@
       },
       "end_time": {
         "name": "结束时间"
+      },
+      "file_transfer": {
+        "name": "文件传输",
+        "state": {
+          "idle": "空闲",
+          "transferring": "传输中",
+          "completed": "已完成",
+          "failed": "失败"
+        }
+      },
+      "file_transfer_progress": {
+        "name": "文件传输进度"
       }
     },
     "select": {

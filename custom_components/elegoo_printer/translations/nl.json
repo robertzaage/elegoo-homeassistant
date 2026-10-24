@@ -261,6 +261,18 @@
       },
       "end_time": {
         "name": "Einde Tijd"
+      },
+      "file_transfer": {
+        "name": "Bestandsoverdracht",
+        "state": {
+          "idle": "Inactief",
+          "transferring": "Bezig",
+          "completed": "Voltooid",
+          "failed": "Mislukt"
+        }
+      },
+      "file_transfer_progress": {
+        "name": "Voortgang bestandsoverdracht"
       }
     },
     "select": {

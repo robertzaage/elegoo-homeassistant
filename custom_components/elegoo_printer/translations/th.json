@@ -261,6 +261,18 @@
       },
       "end_time": {
         "name": "เวลาสิ้นสุด"
+      },
+      "file_transfer": {
+        "name": "การโอนไฟล์",
+        "state": {
+          "idle": "ว่าง",
+          "transferring": "กำลังโอน",
+          "completed": "เสร็จสิ้น",
+          "failed": "ล้มเหลว"
+        }
+      },
+      "file_transfer_progress": {
+        "name": "ความคืบหน้าการโอนไฟล์"
       }
     },
     "select": {

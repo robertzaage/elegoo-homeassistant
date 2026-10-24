@@ -261,6 +261,18 @@
       },
       "end_time": {
         "name": "종료 시간"
+      },
+      "file_transfer": {
+        "name": "파일 전송",
+        "state": {
+          "idle": "대기",
+          "transferring": "전송 중",
+          "completed": "완료",
+          "failed": "실패"
+        }
+      },
+      "file_transfer_progress": {
+        "name": "파일 전송 진행률"
       }
     },
     "select": {

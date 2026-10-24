@@ -261,6 +261,18 @@
       },
       "end_time": {
         "name": "Sluttidspunkt"
+      },
+      "file_transfer": {
+        "name": "Filoverførsel",
+        "state": {
+          "idle": "Inaktiv",
+          "transferring": "Overfører",
+          "completed": "Fuldført",
+          "failed": "Mislykkedes"
+        }
+      },
+      "file_transfer_progress": {
+        "name": "Status for filoverførsel"
       }
     },
     "select": {

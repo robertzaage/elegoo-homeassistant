@@ -261,6 +261,18 @@
       },
       "end_time": {
         "name": "Hora Final"
+      },
+      "file_transfer": {
+        "name": "Transferencia de archivo",
+        "state": {
+          "idle": "Inactiva",
+          "transferring": "Transfiriendo",
+          "completed": "Completada",
+          "failed": "Fallida"
+        }
+      },
+      "file_transfer_progress": {
+        "name": "Progreso de la transferencia de archivo"
       }
     },
     "select": {

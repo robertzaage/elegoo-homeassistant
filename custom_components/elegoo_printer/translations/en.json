@@ -261,6 +261,18 @@
       },
       "end_time": {
         "name": "End Time"
+      },
+      "file_transfer": {
+        "name": "File Transfer",
+        "state": {
+          "idle": "Idle",
+          "transferring": "Transferring",
+          "completed": "Completed",
+          "failed": "Failed"
+        }
+      },
+      "file_transfer_progress": {
+        "name": "File Transfer Progress"
       }
     },
     "select": {

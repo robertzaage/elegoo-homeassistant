@@ -261,6 +261,18 @@
       },
       "end_time": {
         "name": "وقت الانتهاء"
+      },
+      "file_transfer": {
+        "name": "نقل الملف",
+        "state": {
+          "idle": "خامل",
+          "transferring": "جارٍ النقل",
+          "completed": "مكتمل",
+          "failed": "فشل"
+        }
+      },
+      "file_transfer_progress": {
+        "name": "تقدم نقل الملف"
       }
     },
     "select": {

@@ -261,6 +261,18 @@
       },
       "end_time": {
         "name": "Λήξη Χρόνου"
+      },
+      "file_transfer": {
+        "name": "Μεταφορά αρχείου",
+        "state": {
+          "idle": "Αδρανής",
+          "transferring": "Μεταφορά",
+          "completed": "Ολοκληρώθηκε",
+          "failed": "Απέτυχε"
+        }
+      },
+      "file_transfer_progress": {
+        "name": "Πρόοδος μεταφοράς αρχείου"
       }
     },
     "select": {

@@ -226,6 +226,49 @@ class PrintInfo:
         )
 
 
+class FileTransferInfo:
+    """
+    Progress of a file the printer downloads (V1/MQTT printers).
+
+    The printer reports ``Status`` 2 when the file arrived and 3 when the
+    transfer failed. While downloading, ``Status`` stays 0 and only
+    ``DownloadOffset`` grows, so "transferring" is derived from the offset.
+    """
+
+    STATUS_COMPLETED = 2
+    STATUS_FAILED = 3
+
+    def __init__(self, data: dict[str, Any] | None = None) -> None:
+        """Initialize from the status message's ``FileTransferInfo``."""
+        if data is None:
+            data = {}
+        self.status: int = data.get("Status", 0)
+        self.download_offset: int = data.get("DownloadOffset", 0)
+        self.check_offset: int = data.get("CheckOffset", 0)
+        self.file_total_size: int = data.get("FileTotalSize", 0)
+        self.filename: str = data.get("Filename", "")
+
+    @property
+    def state(self) -> str:
+        """Return idle, transferring, completed or failed."""
+        if not self.filename:
+            return "idle"
+        if self.status == self.STATUS_COMPLETED:
+            return "completed"
+        if self.status == self.STATUS_FAILED:
+            return "failed"
+        if self.file_total_size and self.download_offset < self.file_total_size:
+            return "transferring"
+        return "idle"
+
+    @property
+    def progress(self) -> float | None:
+        """Return the downloaded share in percent, None without a file size."""
+        if not self.file_total_size:
+            return None
+        return round(100 * self.download_offset / self.file_total_size, 1)
+
+
 class PrinterStatus:
     """
     Represents the status of a 3D printer.
@@ -252,6 +295,8 @@ class PrinterStatus:
         current_fan_speed (CurrentFanSpeed): The current fan speed.
         light_status (LightStatus): The status of the lights.
         print_info (PrintInfo): Information about the current print job.
+        file_transfer_info (FileTransferInfo): Progress of a file download
+            (V1/MQTT printers; empty for others).
 
     """
 
@@ -314,6 +359,8 @@ class PrinterStatus:
 
         print_info_data = status.get("PrintInfo", {})
         self.print_info: PrintInfo = PrintInfo(print_info_data, printer_type)
+
+        self.file_transfer_info = FileTransferInfo(status.get("FileTransferInfo"))
 
     @classmethod
     def from_json(
