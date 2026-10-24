@@ -47,14 +47,14 @@
           "mqtt_external_host": "Externer MQTT-Broker-Host (optional)",
           "mqtt_external_port": "Externer MQTT-Broker-Port (optional)",
           "allow_printer_offline": "Drucker ist oft ausgeschaltet",
-          "slicer_proxy_enabled": "Drucker mit Slicern teilen (ChiTuBox)"
+          "slicer_proxy_enabled": "Drucker mit Slicern teilen"
         },
         "data_description": {
           "external_ip": "Überschreiben Sie die automatisch erkannte Adresse mit einer IP-Adresse oder einem Hostnamen. Leer lassen für automatische Erkennung. Verwenden Sie dies für Kubernetes/Docker-Einrichtungen oder wenn hinter einem Reverse Proxy. Die Ports 3030 und 3031 werden automatisch angehängt.",
           "mqtt_external_host": "Weisen Sie auf einen bestehenden MQTT-Broker (z. B. Mosquitto) an, anstatt den eingebetteten zu starten. Leer lassen, um den integrierten Broker zu verwenden.",
           "mqtt_external_port": "Port für den oben angegebenen externen MQTT-Broker. Standardmäßig 1883, wenn leer gelassen.",
           "allow_printer_offline": "Einrichtung abschließen, auch wenn der Drucker nicht erreichbar ist. Alle Entitäten bleiben \"Unavailable\" (nicht verfügbar), bis er eingeschaltet wird, statt dass die Integration eine fehlgeschlagene Einrichtung meldet. Hinweis: Eine falsche IP-Adresse oder ein unerreichbarer Drucker sieht dann genauso aus wie ein ausgeschalteter.",
-          "slicer_proxy_enabled": "Der Drucker erlaubt nur eine Verbindung, und die hält Home Assistant. Ist das eingeschaltet, bietet Home Assistant den Drucker zusätzlich Slicern im Netzwerk an: ChiTuBox findet ihn unter der Adresse von Home Assistant und kann Aufträge senden und starten, während Home Assistant weiter überwacht."
+          "slicer_proxy_enabled": "Der Drucker erlaubt nur eine Verbindung, und die hält Home Assistant. Ist das eingeschaltet, bietet Home Assistant den Drucker zusätzlich Slicern im Netzwerk an, als zweiten Drucker namens „… (Home Assistant)“. Wählen Sie diesen Eintrag im Slicer, um Aufträge zu senden und zu starten, während Home Assistant weiter überwacht."
         }
       },
       "websocket_options": {

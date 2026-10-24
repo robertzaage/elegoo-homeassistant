@@ -47,14 +47,14 @@
           "mqtt_external_host": "Host zewnętrznego brokera MQTT (opcjonalne)",
           "mqtt_external_port": "Port zewnętrznego brokera MQTT (opcjonalne)",
           "allow_printer_offline": "Drukarka jest często wyłączona",
-          "slicer_proxy_enabled": "Udostępnij drukarkę slicerom (ChiTuBox)"
+          "slicer_proxy_enabled": "Udostępnij drukarkę slicerom"
         },
         "data_description": {
           "external_ip": "Nadpisz automatycznie wykryty adres adresem IP lub nazwą hosta. Pozostaw puste dla automatycznego wykrywania. Użyj do konfiguracji Kubernetes/Docker lub gdy jesteś za odwróconym proxy. Porty 3030 i 3031 zostaną dodane automatycznie.",
           "mqtt_external_host": "Wskaż istniejącego brokera MQTT (np. Mosquitto) zamiast uruchamiać wbudowanego. Pozostaw puste, aby używać wbudowanego brokera.",
           "mqtt_external_port": "Port zewnętrznego brokera MQTT podanego powyżej. Domyślnie 1883, jeśli pozostanie puste.",
           "allow_printer_offline": "Ukończ konfigurację nawet wtedy, gdy drukarka jest niedostępna. Wszystkie encje pozostaną \"Unavailable\" (niedostępne), dopóki się nie włączy, zamiast zgłaszania przez integrację nieudanej konfiguracji. Uwaga: błędny adres IP lub nieosiągalna drukarka wyglądają wtedy dokładnie jak wyłączona drukarka.",
-          "slicer_proxy_enabled": "Drukarka przyjmuje tylko jedno połączenie, które utrzymuje Home Assistant. Po włączeniu Home Assistant udostępnia drukarkę także slicerom w Twojej sieci: ChiTuBox znajduje ją pod adresem Home Assistant i może wysyłać oraz uruchamiać zadania, a Home Assistant nadal monitoruje drukarkę."
+          "slicer_proxy_enabled": "Drukarka przyjmuje tylko jedno połączenie, które utrzymuje Home Assistant. Po włączeniu Home Assistant udostępnia drukarkę także slicerom w Twojej sieci jako drugą drukarkę o nazwie „… (Home Assistant)”. Wybierz ten wpis w slicerze, aby wysyłać i uruchamiać zadania, a Home Assistant nadal monitoruje drukarkę."
         }
       },
       "websocket_options": {

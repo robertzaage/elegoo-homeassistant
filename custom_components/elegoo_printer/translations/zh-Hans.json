@@ -47,14 +47,14 @@
           "mqtt_external_host": "外部 MQTT Broker 主机（可选）",
           "mqtt_external_port": "外部 MQTT Broker 端口（可选）",
           "allow_printer_offline": "打印机经常处于关机状态",
-          "slicer_proxy_enabled": "与切片软件共享打印机（ChiTuBox）"
+          "slicer_proxy_enabled": "与切片软件共享打印机"
         },
         "data_description": {
           "external_ip": "用 IP 地址或主机名覆盖自动检测到的地址。留空以进行自动检测。用于 Kubernetes/Docker 设置或在反向代理后面。端口 3030 和 3031 将自动添加。",
           "mqtt_external_host": "指向一个现有的 MQTT broker（例如 Mosquitto），而不是启动内置的那个。留空则使用内置 broker。",
           "mqtt_external_port": "上述外部 MQTT broker 的端口。留空时默认为 1883。",
           "allow_printer_offline": "即使无法访问打印机也完成设置。所有实体将保持 \"Unavailable\"（不可用），直到打印机通电，而不是由集成报告设置失败。注意：填错的 IP 地址或无法访问的打印机，看起来与已关机的打印机完全相同。",
-          "slicer_proxy_enabled": "打印机只接受一个连接，该连接由 Home Assistant 保持。启用后，Home Assistant 还会向网络中的切片软件提供这台打印机：ChiTuBox 可在 Home Assistant 的地址找到它，并在 Home Assistant 继续监控的同时发送和启动打印任务。"
+          "slicer_proxy_enabled": "打印机只接受一个连接，该连接由 Home Assistant 保持。启用后，Home Assistant 还会以名为“… (Home Assistant)”的第二台打印机的形式向网络中的切片软件提供这台打印机。在切片软件中选择该条目，即可在 Home Assistant 继续监控的同时发送和启动打印任务。"
         }
       },
       "websocket_options": {

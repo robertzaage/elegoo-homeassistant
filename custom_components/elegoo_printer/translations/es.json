@@ -47,14 +47,14 @@
           "mqtt_external_host": "Host del broker MQTT externo (opcional)",
           "mqtt_external_port": "Puerto del broker MQTT externo (opcional)",
           "allow_printer_offline": "La impresora está apagada con frecuencia",
-          "slicer_proxy_enabled": "Compartir la impresora con laminadores (ChiTuBox)"
+          "slicer_proxy_enabled": "Compartir la impresora con laminadores"
         },
         "data_description": {
           "external_ip": "Sobreescribir la dirección detectada automáticamente con una dirección IP o nombre de host. Deje en blanco para detección automática. Utilice para configuraciones de Kubernetes/Docker o cuando esté detrás de un proxy inverso. Los puertos 3030 y 3031 se agregarán automáticamente.",
           "mqtt_external_host": "Apunte a un broker MQTT existente (p. ej. Mosquitto) en lugar de iniciar el integrado. Dejar en blanco para usar el broker integrado.",
           "mqtt_external_port": "Puerto para el broker MQTT externo especificado anteriormente. El valor predeterminado es 1883 si se deja en blanco.",
           "allow_printer_offline": "Completar la configuración aunque no se pueda acceder a la impresora. Todas las entidades quedan \"Unavailable\" (no disponibles) hasta que se encienda, en lugar de que la integración informe un error de configuración. Nota: una dirección IP incorrecta o una impresora inaccesible parecen entonces exactamente una impresora apagada.",
-          "slicer_proxy_enabled": "La impresora solo acepta una conexión, que mantiene Home Assistant. Con esta opción, Home Assistant también ofrece la impresora a los laminadores de tu red: ChiTuBox la encuentra en la dirección de Home Assistant y puede enviar e iniciar trabajos mientras Home Assistant sigue supervisando."
+          "slicer_proxy_enabled": "La impresora solo acepta una conexión, que mantiene Home Assistant. Con esta opción, Home Assistant también ofrece la impresora a los laminadores de tu red como una segunda impresora llamada \"… (Home Assistant)\". Selecciona esa entrada en tu laminador para enviar e iniciar trabajos mientras Home Assistant sigue supervisando."
         }
       },
       "websocket_options": {

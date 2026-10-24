@@ -47,14 +47,14 @@
           "mqtt_external_host": "外部 MQTT ブローカーホスト（オプション）",
           "mqtt_external_port": "外部 MQTT ブローカーポート（オプション）",
           "allow_printer_offline": "プリンターはよく電源が切れている",
-          "slicer_proxy_enabled": "スライサーとプリンターを共有（ChiTuBox）"
+          "slicer_proxy_enabled": "スライサーとプリンターを共有"
         },
         "data_description": {
           "external_ip": "自動検出されたアドレスを IP アドレスまたはホスト名で上書きします。自動検出のために空白のままにしてください。Kubernetes/Docker 設定やリバースプロキシの背後で使用します。ポート 3030 および 3031 が自動的に追加されます。",
           "mqtt_external_host": "組み込みブローカーの代わりに既存の MQTT ブローカー（例: Mosquitto）を指定します。組み込みブローカーを使用する場合は空白のままにしてください。",
           "mqtt_external_port": "上記で指定した外部 MQTT ブローカーのポート。空白の場合は 1883 がデフォルトで使われます。",
           "allow_printer_offline": "プリンターに到達できない場合でもセットアップを完了します。統合がセットアップ失敗を報告する代わりに、電源が入るまで全てのエンティティは \"Unavailable\"（利用不可）のままです。注意：IP アドレスの誤りや到達不能なプリンターも、電源が切れたプリンターと区別できなくなります。",
-          "slicer_proxy_enabled": "プリンターは 1 つの接続しか受け付けず、その接続は Home Assistant が保持しています。有効にすると、Home Assistant はネットワーク上のスライサーにもプリンターを提供します。ChiTuBox は Home Assistant のアドレスでプリンターを見つけ、Home Assistant が監視を続けたままジョブを送信・開始できます。"
+          "slicer_proxy_enabled": "プリンターは 1 つの接続しか受け付けず、その接続は Home Assistant が保持しています。有効にすると、Home Assistant はネットワーク上のスライサーにも「… (Home Assistant)」という名前の 2 台目のプリンターとしてこのプリンターを提供します。スライサーでその項目を選ぶと、Home Assistant が監視を続けたままジョブを送信・開始できます。"
         }
       },
       "websocket_options": {

@@ -3,7 +3,7 @@ Tests for the V1 (MQTT) slicer proxy.
 
 The bridge tests run two real instances of the embedded broker: one plays
 Home Assistant's broker (the printer is connected to it), the other plays
-the slicer's own broker that ChiTuBox opens before sending M66666.
+the slicer's own broker that a slicer opens before sending M66666.
 """
 
 from __future__ import annotations
@@ -328,9 +328,7 @@ async def test_bridge_passes_traffic_both_ways(brokers) -> None:
 
     async with (
         aiomqtt.Client("127.0.0.1", ha_broker.port, identifier="printer") as printer,
-        aiomqtt.Client(
-            "127.0.0.1", slicer_broker.port, identifier="chitubox"
-        ) as slicer,
+        aiomqtt.Client("127.0.0.1", slicer_broker.port, identifier="slicer") as slicer,
     ):
         await printer.subscribe(_topic("request"))
         await slicer.subscribe(_topic("status", ALIAS_ID))
@@ -370,9 +368,7 @@ async def test_bridge_answers_period_and_disconnect_itself(brokers) -> None:
 
     async with (
         aiomqtt.Client("127.0.0.1", ha_broker.port, identifier="printer") as printer,
-        aiomqtt.Client(
-            "127.0.0.1", slicer_broker.port, identifier="chitubox"
-        ) as slicer,
+        aiomqtt.Client("127.0.0.1", slicer_broker.port, identifier="slicer") as slicer,
     ):
         await printer.subscribe(_topic("request"))
         await slicer.subscribe(_topic("response", ALIAS_ID))
@@ -414,7 +410,7 @@ async def test_bridge_replays_latest_state_to_a_new_slicer(brokers) -> None:
     }
 
     async with aiomqtt.Client(
-        "127.0.0.1", slicer_broker.port, identifier="chitubox"
+        "127.0.0.1", slicer_broker.port, identifier="slicer"
     ) as slicer:
         await slicer.subscribe(_topic("attributes", ALIAS_ID))
         await slicer.subscribe(_topic("status", ALIAS_ID))
@@ -432,15 +428,13 @@ async def test_bridge_replays_latest_state_to_a_new_slicer(brokers) -> None:
 
 
 async def test_bridge_asks_the_printer_for_attributes_on_connect(brokers) -> None:
-    """ChiTuBox waits for attributes; a real printer sends them on connect."""
+    """Slicers wait for attributes; a real printer sends them on connect."""
     ha_broker, slicer_broker = brokers
     proxy = _proxy(ha_broker.port)
 
     async with (
         aiomqtt.Client("127.0.0.1", ha_broker.port, identifier="printer") as printer,
-        aiomqtt.Client(
-            "127.0.0.1", slicer_broker.port, identifier="chitubox"
-        ) as slicer,
+        aiomqtt.Client("127.0.0.1", slicer_broker.port, identifier="slicer") as slicer,
     ):
         await printer.subscribe(_topic("request"))
         await slicer.subscribe(_topic("attributes", ALIAS_ID))
@@ -467,12 +461,12 @@ FILE_BODY = bytes(range(256)) * 512  # 128 KiB, more than one relay chunk
 
 @pytest.fixture
 async def slicer_file_server(tmp_path: Path):
-    """Play ChiTuBox's file server: serves FILE_BODY at /SlicerFile/model.ctb."""
+    """Play a slicer's file server: serves FILE_BODY at /SlicerFile/model.ctb."""
     model = tmp_path / "model.ctb"
     model.write_bytes(FILE_BODY)
 
     async def _file(_request: web.Request) -> web.FileResponse:
-        return web.FileResponse(model)  # supports Range, like ChiTuBox
+        return web.FileResponse(model)  # supports Range, like a slicer's file server
 
     app = web.Application()
     app.router.add_get("/SlicerFile/model.ctb", _file)
@@ -529,9 +523,7 @@ async def test_bridge_sends_uploads_through_the_relay(brokers) -> None:
 
     async with (
         aiomqtt.Client("127.0.0.1", ha_broker.port, identifier="printer") as printer,
-        aiomqtt.Client(
-            "127.0.0.1", slicer_broker.port, identifier="chitubox"
-        ) as slicer,
+        aiomqtt.Client("127.0.0.1", slicer_broker.port, identifier="slicer") as slicer,
     ):
         await printer.subscribe(_topic("request"))
         proxy._start_bridge(SlicerBroker("127.0.0.1", slicer_broker.port))

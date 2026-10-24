@@ -47,14 +47,14 @@
           "mqtt_external_host": "External MQTT Broker Host (optional)",
           "mqtt_external_port": "External MQTT Broker Port (optional)",
           "allow_printer_offline": "Printer is often switched off",
-          "slicer_proxy_enabled": "Share the printer with slicers (ChiTuBox)"
+          "slicer_proxy_enabled": "Share the printer with slicers"
         },
         "data_description": {
           "external_ip": "Override auto-detected address with an IP address or hostname. Leave blank for automatic detection. Use for Kubernetes/Docker setups or when behind a reverse proxy. Ports 3030 and 3031 will be appended automatically.",
           "mqtt_external_host": "Point at an existing MQTT broker (e.g. Mosquitto) instead of starting the embedded one. Leave blank to use the built-in broker.",
           "mqtt_external_port": "Port for the external MQTT broker specified above. Defaults to 1883 if left blank.",
           "allow_printer_offline": "Set up even when the printer can't be reached. All entities stay \"Unavailable\" until it is powered on, instead of the integration reporting a failed setup. Note: a wrong IP address or unreachable printer then looks the same as a switched-off one.",
-          "slicer_proxy_enabled": "The printer accepts only one connection, which Home Assistant keeps. With this on, Home Assistant also offers the printer to slicers on your network: ChiTuBox finds it at Home Assistant's address and can send and start jobs while Home Assistant keeps monitoring."
+          "slicer_proxy_enabled": "The printer accepts only one connection, which Home Assistant keeps. With this on, Home Assistant also offers the printer to slicers on your network as a second printer named \"… (Home Assistant)\". Select that entry in your slicer to send and start jobs while Home Assistant keeps monitoring."
         }
       },
       "websocket_options": {

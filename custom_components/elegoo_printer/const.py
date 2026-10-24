@@ -32,7 +32,7 @@ CONF_ALLOW_PRINTER_OFFLINE = "allow_printer_offline"
 CONF_MQTT_BROKER_ENABLED = "mqtt_broker_enabled"
 CONF_MQTT_EXTERNAL_HOST = "mqtt_external_host"
 CONF_MQTT_EXTERNAL_PORT = "mqtt_external_port"
-# Offer a V1 MQTT printer to slicers (ChiTuBox) through Home Assistant, so the
+# Offer a V1 MQTT printer to slicers through Home Assistant, so the
 # printer's single MQTT connection does not lock the slicer out.
 CONF_SLICER_PROXY_ENABLED = "slicer_proxy_enabled"
 
