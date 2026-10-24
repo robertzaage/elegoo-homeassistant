@@ -29,6 +29,8 @@ The proxy offers the printer to slicers a second time, under its own identity:
    Home Assistant, so a small file relay on Home Assistant serves the file,
    streamed from the slicer. It only serves files the bridged slicer
    announced, and only while that slicer is connected.
+5. Cover image: V1 printers send no thumbnail, so the proxy reads the preview
+   image from the start of each announced file (see ``ctb_preview``).
 
 Two requests are answered by the proxy instead of the printer, because they
 would change the printer's link for Home Assistant too: ``Disconnect`` (64)
@@ -47,6 +49,7 @@ import re
 import secrets
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import aiomqtt
@@ -71,6 +74,7 @@ from .const import (
     TOPIC_RESPONSE,
     TOPIC_STATUS,
 )
+from .ctb_preview import PreviewError, fetch_preview_png
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -129,6 +133,15 @@ def alias_id(value: str) -> str:
         seed = hashlib.sha256(seed.encode()).hexdigest()
         digest += seed
     return digest[: len(value)]
+
+
+@dataclass(frozen=True)
+class SlicerCover:
+    """Preview image of the last file a slicer sent through the proxy."""
+
+    filename: str
+    png: bytes
+    received: datetime
 
 
 @dataclass(frozen=True)
@@ -406,6 +419,7 @@ class SlicerProxy:
         self._latest: dict[str, str] = {}
         self._connection_id = ""
         self._relay: FileRelay | None = None
+        self.cover: SlicerCover | None = None
         self.slicer: SlicerBroker | None = None
 
     @property
@@ -723,12 +737,35 @@ class SlicerProxy:
             return payload
         if self._relay is None or not isinstance(data, dict):
             return payload
-        data["URL"] = self._relay.rewrite_url(data.get("URL"))
+        url = data.get("URL")
+        match = _SLICER_FILE_URL.match(url) if isinstance(url, str) else None
+        if match is not None and isinstance(filename := data.get("Filename"), str):
+            source = f"http://{self._relay.slicer_host}:{match[1]}/{match[2]}"
+            self._spawn(self._fetch_cover(filename, source))
+        data["URL"] = self._relay.rewrite_url(url)
         self.logger.info(
             "Slicer proxy: printer fetches %s through Home Assistant",
             data.get("Filename", "the file"),
         )
         return json.dumps(frame, ensure_ascii=False)
+
+    async def _fetch_cover(self, filename: str, url: str) -> None:
+        """Keep the preview image of a file the slicer sent."""
+        try:
+            async with ClientSession(timeout=ClientTimeout(total=30)) as session:
+                png = await fetch_preview_png(session, url)
+        except PreviewError as err:
+            self.logger.info("Slicer proxy: no preview image in %s: %s", filename, err)
+            return
+        except (ClientError, TimeoutError) as err:
+            self.logger.warning(
+                "Slicer proxy: could not read the preview of %s: %s", filename, err
+            )
+            return
+        self.cover = SlicerCover(filename, png, datetime.now(UTC))
+        self.logger.info(
+            "Slicer proxy: preview image of %s (%s bytes PNG)", filename, len(png)
+        )
 
     def _request(self, cmd: int) -> str:
         """Build a request frame to the printer, like the integration's own."""
