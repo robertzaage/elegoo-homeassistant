@@ -546,3 +546,41 @@ async def test_bridge_sends_uploads_through_the_relay(brokers) -> None:
 
         await proxy.stop()
         assert proxy._relay is None
+
+
+async def test_upload_keeps_the_files_preview_as_cover(tmp_path: Path) -> None:
+    """The proxy reads the preview of every file a slicer sends."""
+    from custom_components.elegoo_printer.tests.test_ctb_preview import (  # noqa: PLC0415
+        _encrypted_ctb,
+        _png_pixels,
+    )
+
+    (tmp_path / "model.ctb").write_bytes(_encrypted_ctb())
+    app = web.Application()
+    app.router.add_static("/SlicerFile", tmp_path)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    port = runner.addresses[0][1]
+
+    proxy = _proxy()
+    proxy._relay = FileRelay("127.0.0.1")
+    await proxy._relay.start()
+    try:
+        upload = _request(
+            256,
+            "up",
+            {
+                "Filename": "model.ctb",
+                "URL": f"http://${{ipaddr}}:{port}/SlicerFile/model.ctb",
+            },
+        )
+        proxy._relay_upload(proxy.identity.for_printer(upload))
+        await _wait_for(lambda: proxy.cover is not None)
+        assert proxy.cover.filename == "model.ctb"
+        assert _png_pixels(proxy.cover.png)[:2] == (6, 4)
+    finally:
+        await proxy.stop()
+        await proxy._relay.stop()
+        await runner.cleanup()
