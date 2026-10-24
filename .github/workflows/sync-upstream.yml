@@ -1,0 +1,91 @@
+# Keeps this fork in line with upstream (see FORK.md).
+#
+# - main:   fast-forwarded to upstream main on every run.
+# - stable: gets each new upstream *release* merged in, but is only pushed
+#           after lint and tests pass. Home Assistant installs stable through
+#           HACS (it is the default branch of this fork).
+# - Workflows inherited from upstream (releases, bots) are kept disabled here.
+#
+# Pushing commits that touch .github/workflows needs a token with the
+# Workflows permission, which GITHUB_TOKEN cannot have. SYNC_TOKEN is a
+# fine-grained token for this repository only (Contents and Workflows:
+# read and write). It is used in the push steps only, never while upstream
+# code runs.
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: "17 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write # disable inherited workflows
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: danielcherubini/elegoo-homeassistant
+
+jobs:
+  sync:
+    if: github.repository == 'robertzaage/elegoo-homeassistant'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out stable
+        uses: actions/checkout@v7
+        with:
+          ref: stable
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch upstream
+        run: |
+          git config user.name "Robert Zaage"
+          git config user.email "robert@zaage.it"
+          git remote add upstream "https://github.com/$UPSTREAM.git"
+          git fetch --quiet --tags upstream main
+
+      - name: Merge the latest upstream release into stable
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh api "repos/$UPSTREAM/releases/latest" --jq .tag_name)
+          echo "Latest upstream release: $tag"
+          if git merge-base --is-ancestor "$tag" HEAD; then
+            echo "stable already contains $tag"
+          else
+            git merge --no-ff --no-edit -m "Merge upstream release $tag into stable" "$tag"
+          fi
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Lint and test (same commands as upstream CI)
+        run: |
+          uv python install
+          uv sync --all-extras --dev
+          uv run ruff check .
+          uv run ruff format . --check
+          uv run pytest
+
+      - name: Push main and stable
+        env:
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          url="https://x-access-token:${SYNC_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push "$url" refs/remotes/upstream/main:refs/heads/main HEAD:refs/heads/stable
+
+      - name: Keep inherited workflows disabled
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh workflow list --all --json path,state \
+            --jq '.[] | select(.state == "active" and .path != ".github/workflows/sync-upstream.yml") | .path' |
+          while read -r path; do
+            echo "Disabling $path"
+            gh workflow disable "$(basename "$path")"
+          done
