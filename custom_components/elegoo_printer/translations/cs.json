@@ -47,14 +47,14 @@
           "mqtt_external_host": "Externí hostitel MQTT brokeru (volitelné)",
           "mqtt_external_port": "Externí port MQTT brokeru (volitelné)",
           "allow_printer_offline": "Tiskárna je často vypnutá",
-          "slicer_proxy_enabled": "Sdílet tiskárnu se sliceary (ChiTuBox)"
+          "slicer_proxy_enabled": "Sdílet tiskárnu se slicery"
         },
         "data_description": {
           "external_ip": "Přepsat automaticky detekovanou adresu IP nebo názvem hostitele. Nechat prázdné pro automatickou detekci. Použít pro Kubernetes/Docker nastavení nebo za reverzním proxy. Porty 3030 a 3031 budou přidány automaticky.",
           "mqtt_external_host": "Namířte na existující MQTT broker (např. Mosquitto) místo spuštění vestavěného. Nechte prázdné pro použití vestavěného brokeru.",
           "mqtt_external_port": "Port externího MQTT brokeru uvedeného výše. Pokud zůstane prázdné, použije se výchozí 1883.",
           "allow_printer_offline": "Dokončit nastavení, i když je tiskárna nedostupná. Všechny entity zůstanou \"Unavailable\" (nedostupné), dokud se tiskárna nezapne, místo aby integrace hlásila neúspěšné nastavení. Poznámka: špatná IP adresa nebo nedostupná tiskárna pak vypadá úplně stejně jako vypnutá tiskárna.",
-          "slicer_proxy_enabled": "Tiskárna přijímá jen jedno spojení a to drží Home Assistant. Je-li tato volba zapnutá, Home Assistant tiskárnu nabídne i slicerům ve vaší síti: ChiTuBox ji najde na adrese Home Assistantu a může odesílat a spouštět úlohy, zatímco Home Assistant dál sleduje stav."
+          "slicer_proxy_enabled": "Tiskárna přijímá jen jedno spojení a to drží Home Assistant. Je-li tato volba zapnutá, Home Assistant tiskárnu nabídne i slicerům ve vaší síti jako druhou tiskárnu s názvem „… (Home Assistant)“. Vyberte tuto položku ve sliceru, abyste mohli odesílat a spouštět úlohy, zatímco Home Assistant dál sleduje stav."
         }
       },
       "websocket_options": {
