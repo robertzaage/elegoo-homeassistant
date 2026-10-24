@@ -43,6 +43,7 @@ from .cc2.upload import CHUNK_SIZE as UPLOAD_CHUNK_SIZE
 from .cc2.upload import UploadFile
 from .const import (
     CONF_PROXY_ENABLED,
+    CONF_SLICER_PROXY_ENABLED,
     CONFIG_VERSION_1,
     CONFIG_VERSION_2,
     CONFIG_VERSION_3,
@@ -53,6 +54,8 @@ from .const import (
 )
 from .coordinator import ElegooDataUpdateCoordinator
 from .data import ElegooPrinterData
+from .mqtt.client import ElegooMQTTClient
+from .mqtt.slicer_proxy import SlicerProxy
 from .sdcp.exceptions import (
     ElegooPrinterConnectionError,
     ElegooPrinterNotConnectedError,
@@ -548,10 +551,40 @@ async def async_setup_entry(
                 )
             raise
 
+    await _async_start_slicer_proxy(entry, client, config)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
     return True
+
+
+async def _async_start_slicer_proxy(
+    entry: ElegooPrinterConfigEntry,
+    client: ElegooPrinterApiClient,
+    config: dict,
+) -> None:
+    """Offer a V1 MQTT printer to slicers through Home Assistant (opt-in)."""
+    if not config.get(CONF_SLICER_PROXY_ENABLED, False):
+        return
+    mqtt_client = client.client
+    if client.mqtt_broker is None or not isinstance(mqtt_client, ElegooMQTTClient):
+        LOGGER.warning(
+            "The slicer proxy needs a V1 (MQTT) printer on the built-in broker;"
+            " it stays off for %s",
+            entry.title,
+        )
+        return
+    proxy = SlicerProxy(
+        printer_ip=client.printer.ip_address,
+        mainboard_id=client.printer.id,
+        proxy_ip=mqtt_client.advertise_host,
+        broker_port=client.mqtt_broker.port,
+        logger=LOGGER,
+    )
+    if await proxy.start():
+        client.slicer_proxy = proxy
+        entry.async_on_unload(proxy.stop)
 
 
 async def async_unload_entry(

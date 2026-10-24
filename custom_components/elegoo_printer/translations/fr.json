@@ -46,13 +46,15 @@
           "external_ip": "Adresse externe (optionnel, pour des configurations réseau avancées)",
           "mqtt_external_host": "Hôte du courtier MQTT externe (facultatif)",
           "mqtt_external_port": "Port du courtier MQTT externe (facultatif)",
-          "allow_printer_offline": "L'imprimante est souvent éteinte"
+          "allow_printer_offline": "L'imprimante est souvent éteinte",
+          "slicer_proxy_enabled": "Partager l'imprimante avec les trancheurs (ChiTuBox)"
         },
         "data_description": {
           "external_ip": "Remplacer l'adresse détectée automatiquement par une adresse IP ou un nom d'hôte. Laisser vide pour la détection automatique. À utiliser pour les configurations Kubernetes/Docker ou derrière un proxy inverse. Les ports 3030 et 3031 seront ajoutés automatiquement.",
           "mqtt_external_host": "Pointer vers un courtier MQTT existant (p. ex. Mosquitto) au lieu de démarrer le courtier intégré. Laisser vide pour utiliser le courtier intégré.",
           "mqtt_external_port": "Port du courtier MQTT externe spécifié ci-dessus. Passe à 1883 par défaut s'il est laissé vide.",
-          "allow_printer_offline": "Terminer la configuration même si l'imprimante est injoignable. Toutes les entités restent \"Unavailable\" (indisponibles) jusqu'à sa mise sous tension, au lieu que l'intégration signale un échec de configuration. À noter : une adresse IP erronée ou une imprimante injoignable ressemble alors exactement à une imprimante éteinte."
+          "allow_printer_offline": "Terminer la configuration même si l'imprimante est injoignable. Toutes les entités restent \"Unavailable\" (indisponibles) jusqu'à sa mise sous tension, au lieu que l'intégration signale un échec de configuration. À noter : une adresse IP erronée ou une imprimante injoignable ressemble alors exactement à une imprimante éteinte.",
+          "slicer_proxy_enabled": "L'imprimante n'accepte qu'une seule connexion, que Home Assistant conserve. Avec cette option, Home Assistant propose aussi l'imprimante aux trancheurs de votre réseau : ChiTuBox la trouve à l'adresse de Home Assistant et peut envoyer et lancer des impressions pendant que Home Assistant continue la surveillance."
         }
       },
       "websocket_options": {

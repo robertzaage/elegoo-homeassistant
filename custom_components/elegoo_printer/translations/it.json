@@ -46,13 +46,15 @@
           "external_ip": "Indirizzo esterno (opzionale, per configurazioni di rete avanzate)",
           "mqtt_external_host": "Host del broker MQTT esterno (opzionale)",
           "mqtt_external_port": "Porta del broker MQTT esterno (opzionale)",
-          "allow_printer_offline": "La stampante è spesso spenta"
+          "allow_printer_offline": "La stampante è spesso spenta",
+          "slicer_proxy_enabled": "Condividi la stampante con gli slicer (ChiTuBox)"
         },
         "data_description": {
           "external_ip": "Sovrascrivere l'indirizzo rilevato automaticamente con un indirizzo IP o nome host. Lasciare vuoto per la rilevazione automatica. Usare per configurazioni Kubernetes/Docker o quando dietro a un proxy inverso. Le porte 3030 e 3031 verranno aggiunte automaticamente.",
           "mqtt_external_host": "Indica un broker MQTT esistente (ad es. Mosquitto) invece di avviare quello integrato. Lasciare vuoto per usare il broker integrato.",
           "mqtt_external_port": "Porta del broker MQTT esterno specificato sopra. Il valore predefinito è 1883 se lasciato vuoto.",
-          "allow_printer_offline": "Completa la configurazione anche quando la stampante non è raggiungibile. Tutte le entità restano \"Unavailable\" (non disponibili) finché non viene accesa, invece di segnalare una configurazione fallita. Nota: un indirizzo IP errato o una stampante irraggiungibile sembrano allora esattamente una stampante spenta."
+          "allow_printer_offline": "Completa la configurazione anche quando la stampante non è raggiungibile. Tutte le entità restano \"Unavailable\" (non disponibili) finché non viene accesa, invece di segnalare una configurazione fallita. Nota: un indirizzo IP errato o una stampante irraggiungibile sembrano allora esattamente una stampante spenta.",
+          "slicer_proxy_enabled": "La stampante accetta una sola connessione, che Home Assistant mantiene. Con questa opzione, Home Assistant offre la stampante anche agli slicer della tua rete: ChiTuBox la trova all'indirizzo di Home Assistant e può inviare e avviare lavori mentre Home Assistant continua il monitoraggio."
         }
       },
       "websocket_options": {
