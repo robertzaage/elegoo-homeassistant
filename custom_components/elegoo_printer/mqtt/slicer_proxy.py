@@ -42,6 +42,7 @@ import hashlib
 import json
 import logging
 import re
+import secrets
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -51,6 +52,8 @@ import aiomqtt
 from custom_components.elegoo_printer.const import DISCOVERY_MESSAGE, DISCOVERY_PORT
 from custom_components.elegoo_printer.sdcp.const import (
     CMD_DISCONNECT,
+    CMD_REQUEST_ATTRIBUTES,
+    CMD_REQUEST_STATUS_REFRESH,
     CMD_SET_STATUS_UPDATE_PERIOD,
 )
 
@@ -306,6 +309,7 @@ class SlicerProxy:
         self._last_discovery: dict[str, float] = {}
         self._cached_discovery: bytes | None = None
         self._latest: dict[str, str] = {}
+        self._connection_id = ""
         self.slicer: SlicerBroker | None = None
 
     @property
@@ -422,6 +426,8 @@ class SlicerProxy:
             return None
         if not isinstance(attributes, dict):
             return None
+        if isinstance(payload.get("Id"), str):
+            self._connection_id = payload["Id"]
         self.identity.learn(payload.get("Id"))
         return self.identity.for_slicer(json.dumps(payload), discovery=True).encode()
 
@@ -517,12 +523,20 @@ class SlicerProxy:
                     await printer_side.subscribe(self._printer_topic(kind))
                 await slicer_side.subscribe(self._slicer_topic(TOPIC_REQUEST))
                 # A printer publishes its attributes and status on connect.
+                # A printer publishes its attributes and status when a slicer
+                # connects, and ChiTuBox waits for them before it sends
+                # anything. Replay what we have, then ask the printer for
+                # fresh copies; the bridge forwards them like any message.
                 for kind in (TOPIC_ATTRIBUTES, TOPIC_STATUS):
                     if kind in self._latest:
                         await slicer_side.publish(
                             self._slicer_topic(kind),
                             self.identity.for_slicer(self._latest[kind]),
                         )
+                for cmd in (CMD_REQUEST_ATTRIBUTES, CMD_REQUEST_STATUS_REFRESH):
+                    await printer_side.publish(
+                        self._printer_topic(TOPIC_REQUEST), self._request(cmd)
+                    )
                 await self._pump(printer_side, slicer_side)
         except aiomqtt.MqttError as err:
             self.logger.info("Slicer proxy: slicer bridge closed: %s", err)
@@ -598,6 +612,23 @@ class SlicerProxy:
             await printer_side.publish(
                 self._printer_topic(TOPIC_REQUEST), self.identity.for_printer(payload)
             )
+
+    def _request(self, cmd: int) -> str:
+        """Build a request frame to the printer, like the integration's own."""
+        return json.dumps(
+            {
+                "Id": self._connection_id,
+                "Data": {
+                    "Cmd": cmd,
+                    "Data": {},
+                    "RequestID": secrets.token_hex(8),
+                    "MainboardID": self.mainboard_id,
+                    "TimeStamp": int(time.time()),
+                    "From": 0,
+                },
+                "Topic": self._printer_topic(TOPIC_REQUEST),
+            }
+        )
 
     def _ack(self, raw: str, request: dict[str, Any]) -> str:
         """Build the success response the printer would send, as the slicer sees it."""
