@@ -12,18 +12,21 @@ The proxy offers the printer to slicers a second time, under its own identity:
    the real printer the same question and relays its answer as a separate
    printer: own ``MainboardID`` and connection ``Id`` (stable stand-ins derived
    from the real ones), the name suffixed with "(Home Assistant)",
-   ``MainboardIP`` pointing at Home Assistant, and its own client link
-   (``SDCPStatus``/``LocalSDCPAddress``: free, or the bridged slicer). With the
-   printer's IDs, ChiTuBox merges both answers and keeps the real printer;
-   with the printer's link status, it refuses with "connection limit".
+   ``MainboardIP`` pointing at Home Assistant, and always free
+   (``SDCPStatus`` 0, no ``LocalSDCPAddress``). With the printer's IDs,
+   ChiTuBox merges both answers and keeps the real printer; with the
+   printer's link status, it refuses with "connection limit". A new M66666
+   replaces a running bridge, so "free" is always true.
 2. Connect: the slicer sends ``M66666 <host> <port> [user] [password]`` to that
    address. The proxy then connects to the slicer's broker as the printer
    would.
 3. Bridge: requests from the slicer go to the printer through the embedded
    broker; everything the printer publishes reaches Home Assistant and the
    slicer alike. Identifiers are translated on the way, so the slicer only
-   ever sees the stand-ins and the printer only its real IDs. File transfers
-   need no help: the printer downloads the file from the URL the slicer sends.
+   ever sees the stand-ins and the printer only its real IDs. The printer
+   downloads files from the URL the slicer sends; its ``${ipaddr}``
+   placeholder (normally the broker, i.e. the slicer) is filled in with the
+   slicer's address, because the printer's broker is Home Assistant.
 
 Two requests are answered by the proxy instead of the printer, because they
 would change the printer's link for Home Assistant too: ``Disconnect`` (64)
@@ -68,6 +71,8 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 CONNECT_MESSAGE = "M66666"
+# Placeholder in file URLs that the printer replaces with its broker's address.
+IPADDR_PLACEHOLDER = "${ipaddr}"
 SLICER_NAME_SUFFIX = " (Home Assistant)"
 PRINTER_QUERY_TIMEOUT = 2.0
 DISCOVERY_RATE_LIMIT_SECONDS = 1.0
@@ -160,13 +165,15 @@ class SlicerIdentity:
         # The printer reports its own client link (SDCPStatus 1 and Home
         # Assistant's broker in LocalSDCPAddress). Slicers read that from the
         # discovery answer and refuse with "connection limit is reached"
-        # without even trying, so the proxy reports its own link instead.
+        # without even trying, so the proxy reports its own link instead:
+        # always free in discovery answers (a new M66666 replaces the bridge),
+        # and the bridged slicer inside the bridge.
         self.slicer_link: SlicerBroker | None = None
 
-    def _link_attributes(self) -> dict[str, Any]:
-        if self.slicer_link is None:
-            return {"SDCPStatus": 0, "LocalSDCPAddress": ""}
+    def _link_attributes(self, *, discovery: bool) -> dict[str, Any]:
         link = self.slicer_link
+        if discovery or link is None:
+            return {"SDCPStatus": 0, "LocalSDCPAddress": ""}
         return {"SDCPStatus": 1, "LocalSDCPAddress": f"tcp://{link.host}:{link.port}"}
 
     def learn(self, value: Any) -> None:
@@ -176,15 +183,26 @@ class SlicerIdentity:
             self._to_alias[value] = alias
             self._to_real[alias] = value
 
-    def for_slicer(self, payload: str) -> str:
+    def for_slicer(self, payload: str, *, discovery: bool = False) -> str:
         """Rewrite a printer message the way the slicer must see it."""
-        return self._translate(payload, to_slicer=True)
+        return self._translate(
+            payload, to_slicer=True, link=self._link_attributes(discovery=discovery)
+        )
 
     def for_printer(self, payload: str) -> str:
-        """Rewrite a slicer message the way the printer must see it."""
-        return self._translate(payload, to_slicer=False)
+        """
+        Rewrite a slicer message the way the printer must see it.
 
-    def _translate(self, payload: str, *, to_slicer: bool) -> str:
+        Slicers send the file URL as ``http://${ipaddr}:<port>/<file>``; the
+        printer fills in the address of the broker it is connected to, which
+        is Home Assistant here. The proxy fills in the slicer's address.
+        """
+        payload = self._translate(payload, to_slicer=False, link={})
+        if self.slicer_link is not None:
+            payload = payload.replace(IPADDR_PLACEHOLDER, self.slicer_link.host)
+        return payload
+
+    def _translate(self, payload: str, *, to_slicer: bool, link: dict[str, Any]) -> str:
         try:
             frame = json.loads(payload)
         except ValueError:
@@ -192,19 +210,20 @@ class SlicerIdentity:
             for old, new in mapping.items():
                 payload = payload.replace(old, new)
             return payload
-        return json.dumps(self._walk(frame, to_slicer=to_slicer, parent=""))
+        return json.dumps(
+            self._walk(frame, to_slicer=to_slicer, parent="", link=link),
+            ensure_ascii=False,
+        )
 
-    def _walk(self, value: Any, *, to_slicer: bool, parent: str) -> Any:
+    def _walk(
+        self, value: Any, *, to_slicer: bool, parent: str, link: dict[str, Any]
+    ) -> Any:
         if isinstance(value, dict):
             result = {}
             for key, item in value.items():
                 if to_slicer and key == "MainboardIP":
                     result[key] = self.proxy_ip
-                elif (
-                    to_slicer
-                    and parent == "Attributes"
-                    and key in (link := self._link_attributes())
-                ):
+                elif to_slicer and parent == "Attributes" and key in link:
                     result[key] = link[key]
                 elif (
                     to_slicer
@@ -215,11 +234,14 @@ class SlicerIdentity:
                 ):
                     result[key] = f"{item}{SLICER_NAME_SUFFIX}"
                 else:
-                    result[key] = self._walk(item, to_slicer=to_slicer, parent=key)
+                    result[key] = self._walk(
+                        item, to_slicer=to_slicer, parent=key, link=link
+                    )
             return result
         if isinstance(value, list):
             return [
-                self._walk(item, to_slicer=to_slicer, parent=parent) for item in value
+                self._walk(item, to_slicer=to_slicer, parent=parent, link=link)
+                for item in value
             ]
         if isinstance(value, str):
             # IDs also appear inside strings ("Topic": "sdcp/request/<id>").
@@ -401,7 +423,7 @@ class SlicerProxy:
         if not isinstance(attributes, dict):
             return None
         self.identity.learn(payload.get("Id"))
-        return self.identity.for_slicer(json.dumps(payload)).encode()
+        return self.identity.for_slicer(json.dumps(payload), discovery=True).encode()
 
     async def _answer_discovery(self, addr: tuple[str, int]) -> None:
         reply = await self._query_printer()
