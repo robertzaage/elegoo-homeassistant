@@ -108,6 +108,8 @@ def _printer_discovery_answer() -> dict[str, Any]:
                 "MainboardIP": PRINTER_IP,
                 "MainboardID": MAINBOARD_ID,
                 "ProtocolVersion": "V1.0.0",
+                "SDCPStatus": 1,
+                "LocalSDCPAddress": f"tcp://{PROXY_IP}:18830",
             },
             "Status": {"CurrentStatus": [0]},
         },
@@ -127,6 +129,21 @@ def test_discovery_answer_presents_a_separate_printer() -> None:
     assert attributes["Name"] == f"Mars 4 Ultra{SLICER_NAME_SUFFIX}"
     assert attributes["MachineName"] == "ELEGOO Mars 4 Ultra"
     assert answer["Data"]["Status"] == {"CurrentStatus": [0]}
+    # Free for a slicer, although the printer itself is linked to Home Assistant.
+    assert attributes["SDCPStatus"] == 0
+    assert attributes["LocalSDCPAddress"] == ""
+
+
+def test_discovery_answer_reports_the_bridged_slicer() -> None:
+    """While a slicer is bridged, the proxy reports that slicer as its client."""
+    proxy = _proxy()
+    proxy.identity.slicer_link = SlicerBroker(SLICER_IP, 1883)
+    answer = json.loads(
+        proxy.discovery_answer(json.dumps(_printer_discovery_answer()).encode())
+    )
+    attributes = answer["Data"]["Attributes"]
+    assert attributes["SDCPStatus"] == 1
+    assert attributes["LocalSDCPAddress"] == f"tcp://{SLICER_IP}:1883"
 
 
 @pytest.mark.parametrize(

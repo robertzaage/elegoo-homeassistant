@@ -11,9 +11,11 @@ The proxy offers the printer to slicers a second time, under its own identity:
 1. Discovery: a slicer broadcasts ``M99999`` to UDP port 3000. The proxy asks
    the real printer the same question and relays its answer as a separate
    printer: own ``MainboardID`` and connection ``Id`` (stable stand-ins derived
-   from the real ones), the name suffixed with "(Home Assistant)" and
-   ``MainboardIP`` pointing at Home Assistant. With the printer's own IDs,
-   ChiTuBox merges both answers into one entry and keeps the real printer.
+   from the real ones), the name suffixed with "(Home Assistant)",
+   ``MainboardIP`` pointing at Home Assistant, and its own client link
+   (``SDCPStatus``/``LocalSDCPAddress``: free, or the bridged slicer). With the
+   printer's IDs, ChiTuBox merges both answers and keeps the real printer;
+   with the printer's link status, it refuses with "connection limit".
 2. Connect: the slicer sends ``M66666 <host> <port> [user] [password]`` to that
    address. The proxy then connects to the slicer's broker as the printer
    would.
@@ -155,6 +157,17 @@ class SlicerIdentity:
         self.proxy_ip = proxy_ip
         self._to_alias: dict[str, str] = {mainboard_id: self.alias_mainboard_id}
         self._to_real: dict[str, str] = {self.alias_mainboard_id: mainboard_id}
+        # The printer reports its own client link (SDCPStatus 1 and Home
+        # Assistant's broker in LocalSDCPAddress). Slicers read that from the
+        # discovery answer and refuse with "connection limit is reached"
+        # without even trying, so the proxy reports its own link instead.
+        self.slicer_link: SlicerBroker | None = None
+
+    def _link_attributes(self) -> dict[str, Any]:
+        if self.slicer_link is None:
+            return {"SDCPStatus": 0, "LocalSDCPAddress": ""}
+        link = self.slicer_link
+        return {"SDCPStatus": 1, "LocalSDCPAddress": f"tcp://{link.host}:{link.port}"}
 
     def learn(self, value: Any) -> None:
         """Add another printer identifier (the connection ``Id``)."""
@@ -187,6 +200,12 @@ class SlicerIdentity:
             for key, item in value.items():
                 if to_slicer and key == "MainboardIP":
                     result[key] = self.proxy_ip
+                elif (
+                    to_slicer
+                    and parent == "Attributes"
+                    and key in (link := self._link_attributes())
+                ):
+                    result[key] = link[key]
                 elif (
                     to_slicer
                     and key == "Name"
@@ -322,6 +341,7 @@ class SlicerProxy:
         self._tasks.clear()
         self._bridge_task = None
         self.slicer = None
+        self.identity.slicer_link = None
 
     def _spawn(self, coro: Any) -> None:
         task = asyncio.create_task(coro)
@@ -464,6 +484,7 @@ class SlicerProxy:
                 ) as slicer_side,
             ):
                 self.slicer = broker
+                self.identity.slicer_link = broker
                 self.logger.info(
                     "Slicer proxy: bridging slicer broker %s:%s to printer %s",
                     broker.host,
@@ -489,6 +510,7 @@ class SlicerProxy:
             self.logger.exception("Slicer proxy: slicer bridge failed")
         finally:
             self.slicer = None
+            self.identity.slicer_link = None
             self.logger.info("Slicer proxy: slicer disconnected")
 
     async def _pump(
