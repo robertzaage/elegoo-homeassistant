@@ -23,10 +23,12 @@ The proxy offers the printer to slicers a second time, under its own identity:
 3. Bridge: requests from the slicer go to the printer through the embedded
    broker; everything the printer publishes reaches Home Assistant and the
    slicer alike. Identifiers are translated on the way, so the slicer only
-   ever sees the stand-ins and the printer only its real IDs. The printer
-   downloads files from the URL the slicer sends; its ``${ipaddr}``
-   placeholder (normally the broker, i.e. the slicer) is filled in with the
-   slicer's address, because the printer's broker is Home Assistant.
+   ever sees the stand-ins and the printer only its real IDs.
+4. Files: the slicer sends ``http://${ipaddr}:<port>/<file>``, and the printer
+   only downloads from ``${ipaddr}``, the broker it is connected to. That is
+   Home Assistant, so a small file relay on Home Assistant serves the file,
+   streamed from the slicer. It only serves files the bridged slicer
+   announced, and only while that slicer is connected.
 
 Two requests are answered by the proxy instead of the printer, because they
 would change the printer's link for Home Assistant too: ``Disconnect`` (64)
@@ -48,6 +50,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import aiomqtt
+from aiohttp import ClientError, ClientSession, ClientTimeout, web
 
 from custom_components.elegoo_printer.const import DISCOVERY_MESSAGE, DISCOVERY_PORT
 from custom_components.elegoo_printer.sdcp.const import (
@@ -55,6 +58,7 @@ from custom_components.elegoo_printer.sdcp.const import (
     CMD_REQUEST_ATTRIBUTES,
     CMD_REQUEST_STATUS_REFRESH,
     CMD_SET_STATUS_UPDATE_PERIOD,
+    CMD_UPLOAD_FILE,
 )
 
 from .const import (
@@ -74,8 +78,17 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 CONNECT_MESSAGE = "M66666"
-# Placeholder in file URLs that the printer replaces with its broker's address.
-IPADDR_PLACEHOLDER = "${ipaddr}"
+# File URLs from slicers: the printer fills in its broker's address.
+_SLICER_FILE_URL = re.compile(r"^http://\$\{ipaddr\}:(\d+)/(.+)$")
+RELAY_CHUNK_SIZE = 64 * 1024
+RELAY_HEADERS = (
+    "Content-Type",
+    "Content-Length",
+    "Content-Range",
+    "Accept-Ranges",
+    "Last-Modified",
+    "ETag",
+)
 SLICER_NAME_SUFFIX = " (Home Assistant)"
 PRINTER_QUERY_TIMEOUT = 2.0
 DISCOVERY_RATE_LIMIT_SECONDS = 1.0
@@ -193,17 +206,8 @@ class SlicerIdentity:
         )
 
     def for_printer(self, payload: str) -> str:
-        """
-        Rewrite a slicer message the way the printer must see it.
-
-        Slicers send the file URL as ``http://${ipaddr}:<port>/<file>``; the
-        printer fills in the address of the broker it is connected to, which
-        is Home Assistant here. The proxy fills in the slicer's address.
-        """
-        payload = self._translate(payload, to_slicer=False, link={})
-        if self.slicer_link is not None:
-            payload = payload.replace(IPADDR_PLACEHOLDER, self.slicer_link.host)
-        return payload
+        """Rewrite a slicer message the way the printer must see it."""
+        return self._translate(payload, to_slicer=False, link={})
 
     def _translate(self, payload: str, *, to_slicer: bool, link: dict[str, Any]) -> str:
         try:
@@ -254,6 +258,92 @@ class SlicerIdentity:
                 value = value.replace(old, new)
             return value
         return value
+
+
+class FileRelay:
+    """
+    Serves a slicer's files to the printer from Home Assistant.
+
+    The printer downloads only from ``${ipaddr}``, the broker it is connected
+    to, which is Home Assistant. The relay listens on a free port; each file
+    the slicer announces gets a path on it that streams the file from the
+    slicer's own file server.
+    """
+
+    def __init__(self, slicer_host: str, logger: logging.Logger = _LOGGER) -> None:
+        """Serve files of the slicer at ``slicer_host``; call ``start`` first."""
+        self.slicer_host = slicer_host
+        self.logger = logger
+        self.port = 0
+        self._allowed: set[str] = set()
+        self._runner: web.AppRunner | None = None
+        self._session: ClientSession | None = None
+
+    async def start(self) -> None:
+        """Listen on a free port."""
+        app = web.Application()
+        app.router.add_get("/{tail:.+}", self._handle)
+        self._runner = web.AppRunner(app, access_log=None)
+        await self._runner.setup()
+        site = web.TCPSite(self._runner, "0.0.0.0", 0)  # noqa: S104
+        await site.start()
+        self.port = self._runner.addresses[0][1]
+        self._session = ClientSession(timeout=ClientTimeout(sock_read=60))
+
+    async def stop(self) -> None:
+        """Stop serving; running downloads are cut off."""
+        if self._session is not None:
+            await self._session.close()
+            self._session = None
+        if self._runner is not None:
+            await self._runner.cleanup()
+            self._runner = None
+        self._allowed.clear()
+
+    def rewrite_url(self, url: Any) -> Any:
+        """
+        Point a slicer file URL at the relay; other values pass unchanged.
+
+        ``http://${ipaddr}:8165/a.ctb`` becomes
+        ``http://${ipaddr}:<relay port>/8165/a.ctb``.
+        """
+        match = _SLICER_FILE_URL.match(url) if isinstance(url, str) else None
+        if match is None or not self.port:
+            return url
+        tail = f"{match.group(1)}/{match.group(2)}"
+        self._allowed.add(tail)
+        return f"http://${{ipaddr}}:{self.port}/{tail}"
+
+    async def _handle(self, request: web.Request) -> web.StreamResponse:
+        tail = request.match_info["tail"]
+        if tail not in self._allowed or self._session is None:
+            return web.Response(status=404)
+        port, _, path = tail.partition("/")
+        url = f"http://{self.slicer_host}:{port}/{path}"
+        headers = (
+            {"Range": request.headers["Range"]} if "Range" in request.headers else {}
+        )
+        self.logger.debug(
+            "Slicer proxy: printer downloads %s (%s)", url, headers or "full file"
+        )
+        try:
+            async with self._session.get(url, headers=headers) as upstream:
+                response = web.StreamResponse(
+                    status=upstream.status,
+                    headers={
+                        name: upstream.headers[name]
+                        for name in RELAY_HEADERS
+                        if name in upstream.headers
+                    },
+                )
+                await response.prepare(request)
+                async for chunk in upstream.content.iter_chunked(RELAY_CHUNK_SIZE):
+                    await response.write(chunk)
+                await response.write_eof()
+                return response
+        except (ClientError, TimeoutError) as err:
+            self.logger.warning("Slicer proxy: file from %s failed: %s", url, err)
+            return web.Response(status=502)
 
 
 class _UdpProtocol(asyncio.DatagramProtocol):
@@ -310,6 +400,7 @@ class SlicerProxy:
         self._cached_discovery: bytes | None = None
         self._latest: dict[str, str] = {}
         self._connection_id = ""
+        self._relay: FileRelay | None = None
         self.slicer: SlicerBroker | None = None
 
     @property
@@ -522,7 +613,6 @@ class SlicerProxy:
                 for kind in PRINTER_TOPICS:
                     await printer_side.subscribe(self._printer_topic(kind))
                 await slicer_side.subscribe(self._slicer_topic(TOPIC_REQUEST))
-                # A printer publishes its attributes and status on connect.
                 # A printer publishes its attributes and status when a slicer
                 # connects, and ChiTuBox waits for them before it sends
                 # anything. Replay what we have, then ask the printer for
@@ -537,6 +627,8 @@ class SlicerProxy:
                     await printer_side.publish(
                         self._printer_topic(TOPIC_REQUEST), self._request(cmd)
                     )
+                self._relay = FileRelay(broker.host, self.logger)
+                await self._relay.start()
                 await self._pump(printer_side, slicer_side)
         except aiomqtt.MqttError as err:
             self.logger.info("Slicer proxy: slicer bridge closed: %s", err)
@@ -545,6 +637,9 @@ class SlicerProxy:
         except Exception:
             self.logger.exception("Slicer proxy: slicer bridge failed")
         finally:
+            if self._relay is not None:
+                await self._relay.stop()
+                self._relay = None
             self.slicer = None
             self.identity.slicer_link = None
             self.logger.info("Slicer proxy: slicer disconnected")
@@ -609,9 +704,26 @@ class SlicerProxy:
                 if cmd == CMD_DISCONNECT:
                     return
                 continue
-            await printer_side.publish(
-                self._printer_topic(TOPIC_REQUEST), self.identity.for_printer(payload)
-            )
+            forwarded = self.identity.for_printer(payload)
+            if cmd == CMD_UPLOAD_FILE:
+                forwarded = self._relay_upload(forwarded)
+            await printer_side.publish(self._printer_topic(TOPIC_REQUEST), forwarded)
+
+    def _relay_upload(self, payload: str) -> str:
+        """Let the printer fetch an uploaded file through the file relay."""
+        try:
+            frame = json.loads(payload)
+            data = frame["Data"]["Data"]
+        except (ValueError, KeyError, TypeError):
+            return payload
+        if self._relay is None or not isinstance(data, dict):
+            return payload
+        data["URL"] = self._relay.rewrite_url(data.get("URL"))
+        self.logger.info(
+            "Slicer proxy: printer fetches %s through Home Assistant",
+            data.get("Filename", "the file"),
+        )
+        return json.dumps(frame, ensure_ascii=False)
 
     def _request(self, cmd: int) -> str:
         """Build a request frame to the printer, like the integration's own."""
