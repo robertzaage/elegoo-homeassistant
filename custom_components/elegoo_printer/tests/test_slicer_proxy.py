@@ -14,10 +14,12 @@ from typing import TYPE_CHECKING, Any
 
 import aiomqtt
 import pytest
+from aiohttp import ClientSession, web
 
 from custom_components.elegoo_printer.mqtt.server import ElegooMQTTBroker
 from custom_components.elegoo_printer.mqtt.slicer_proxy import (
     SLICER_NAME_SUFFIX,
+    FileRelay,
     SlicerBroker,
     SlicerIdentity,
     SlicerProxy,
@@ -28,6 +30,7 @@ from custom_components.elegoo_printer.mqtt.slicer_proxy import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import Path
 
 MAINBOARD_ID = "428fa2e552d20100"
 CONNECTION_ID = "f25273b12b094c5a8b9513a30ca60049"
@@ -160,22 +163,6 @@ def test_bridged_attributes_report_the_slicer_as_client() -> None:
     ]
     assert attributes["SDCPStatus"] == 1
     assert attributes["LocalSDCPAddress"] == f"tcp://{SLICER_IP}:49610"
-
-
-def test_file_url_placeholder_points_at_the_slicer() -> None:
-    """The printer must download from the slicer, not from its broker (us)."""
-    identity = SlicerIdentity(MAINBOARD_ID, PROXY_IP)
-    identity.slicer_link = SlicerBroker(SLICER_IP, 49610)
-    request = {
-        "Data": {
-            "Cmd": 256,
-            "Data": {"URL": "http://${ipaddr}:58883/model.ctb", "FileSize": 1},
-            "MainboardID": ALIAS_ID,
-        }
-    }
-    forwarded = json.loads(identity.for_printer(json.dumps(request)))["Data"]
-    assert forwarded["Data"]["URL"] == f"http://{SLICER_IP}:58883/model.ctb"
-    assert forwarded["MainboardID"] == MAINBOARD_ID
 
 
 @pytest.mark.parametrize(
@@ -469,3 +456,101 @@ async def test_bridge_asks_the_printer_for_attributes_on_connect(brokers) -> Non
         assert frame["Data"]["Attributes"]["Name"] == f"Mars{SLICER_NAME_SUFFIX}"
 
         await proxy.stop()
+
+
+# ----------------------------------------------------------------------
+# File relay
+# ----------------------------------------------------------------------
+
+FILE_BODY = bytes(range(256)) * 512  # 128 KiB, more than one relay chunk
+
+
+@pytest.fixture
+async def slicer_file_server(tmp_path: Path):
+    """Play ChiTuBox's file server: serves FILE_BODY at /SlicerFile/model.ctb."""
+    model = tmp_path / "model.ctb"
+    model.write_bytes(FILE_BODY)
+
+    async def _file(_request: web.Request) -> web.FileResponse:
+        return web.FileResponse(model)  # supports Range, like ChiTuBox
+
+    app = web.Application()
+    app.router.add_get("/SlicerFile/model.ctb", _file)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    yield runner.addresses[0][1]
+    await runner.cleanup()
+
+
+def test_relay_leaves_urls_alone_until_started() -> None:
+    """Without a listening relay the printer keeps the slicer's URL."""
+    relay = FileRelay("127.0.0.1")
+    url = "http://${ipaddr}:8165/SlicerFile/model.ctb"
+    assert relay.rewrite_url(url) == url
+    assert relay.rewrite_url(None) is None
+
+
+async def test_relay_streams_announced_files_only(slicer_file_server: int) -> None:
+    """The printer gets the slicer's file through Home Assistant, nothing else."""
+    relay = FileRelay("127.0.0.1")
+    await relay.start()
+    try:
+        url = f"http://${{ipaddr}}:{slicer_file_server}/SlicerFile/model.ctb"
+        relayed = relay.rewrite_url(url)
+        assert relayed == (
+            f"http://${{ipaddr}}:{relay.port}/{slicer_file_server}/SlicerFile/model.ctb"
+        )
+        # The plain URL from a slicer with its own address is not touched.
+        assert relay.rewrite_url("http://192.0.2.30:8165/a.ctb") == (
+            "http://192.0.2.30:8165/a.ctb"
+        )
+
+        as_printer = relayed.replace("${ipaddr}", "127.0.0.1")
+        async with ClientSession() as session:
+            async with session.get(as_printer) as response:
+                assert response.status == 200
+                assert await response.read() == FILE_BODY
+            async with session.get(as_printer, headers={"Range": "bytes=10-19"}) as r:
+                assert r.status == 206
+                assert await r.read() == FILE_BODY[10:20]
+            other = f"http://127.0.0.1:{relay.port}/{slicer_file_server}/etc/passwd"
+            async with session.get(other) as response:
+                assert response.status == 404
+    finally:
+        await relay.stop()
+
+
+async def test_bridge_sends_uploads_through_the_relay(brokers) -> None:
+    """Cmd 256 reaches the printer with a URL on Home Assistant's relay."""
+    ha_broker, slicer_broker = brokers
+    proxy = _proxy(ha_broker.port)
+
+    async with (
+        aiomqtt.Client("127.0.0.1", ha_broker.port, identifier="printer") as printer,
+        aiomqtt.Client(
+            "127.0.0.1", slicer_broker.port, identifier="chitubox"
+        ) as slicer,
+    ):
+        await printer.subscribe(_topic("request"))
+        proxy._start_bridge(SlicerBroker("127.0.0.1", slicer_broker.port))
+        await _wait_for(lambda: proxy.slicer_connected)
+        await _skip_connect_requests(printer)
+        await _wait_for(lambda: proxy._relay is not None and proxy._relay.port > 0)
+
+        upload = {
+            "Filename": "model.ctb",
+            "FileSize": 1,
+            "URL": "http://${ipaddr}:8165/SlicerFile/model.ctb",
+        }
+        await slicer.publish(_topic("request", ALIAS_ID), _request(256, "up", upload))
+        _, frame = await _next(printer)
+        relay_port = proxy._relay.port
+        assert frame["Data"]["Data"]["URL"] == (
+            f"http://${{ipaddr}}:{relay_port}/8165/SlicerFile/model.ctb"
+        )
+        assert frame["Data"]["MainboardID"] == MAINBOARD_ID
+
+        await proxy.stop()
+        assert proxy._relay is None
