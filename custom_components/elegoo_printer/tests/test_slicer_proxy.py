@@ -134,16 +134,48 @@ def test_discovery_answer_presents_a_separate_printer() -> None:
     assert attributes["LocalSDCPAddress"] == ""
 
 
-def test_discovery_answer_reports_the_bridged_slicer() -> None:
-    """While a slicer is bridged, the proxy reports that slicer as its client."""
+def test_discovery_answer_stays_free_while_bridged() -> None:
+    """A slicer retrying with a new broker port must not see a busy printer."""
     proxy = _proxy()
-    proxy.identity.slicer_link = SlicerBroker(SLICER_IP, 1883)
+    proxy.identity.slicer_link = SlicerBroker(SLICER_IP, 49610)
     answer = json.loads(
         proxy.discovery_answer(json.dumps(_printer_discovery_answer()).encode())
     )
     attributes = answer["Data"]["Attributes"]
+    assert attributes["SDCPStatus"] == 0
+    assert attributes["LocalSDCPAddress"] == ""
+
+
+def test_bridged_attributes_report_the_slicer_as_client() -> None:
+    """Inside the bridge the slicer sees itself as the printer's client."""
+    identity = SlicerIdentity(MAINBOARD_ID, PROXY_IP)
+    identity.slicer_link = SlicerBroker(SLICER_IP, 49610)
+    frame = {
+        "Data": {
+            "Attributes": {"SDCPStatus": 1, "LocalSDCPAddress": "tcp://ha:18830"},
+        }
+    }
+    attributes = json.loads(identity.for_slicer(json.dumps(frame)))["Data"][
+        "Attributes"
+    ]
     assert attributes["SDCPStatus"] == 1
-    assert attributes["LocalSDCPAddress"] == f"tcp://{SLICER_IP}:1883"
+    assert attributes["LocalSDCPAddress"] == f"tcp://{SLICER_IP}:49610"
+
+
+def test_file_url_placeholder_points_at_the_slicer() -> None:
+    """The printer must download from the slicer, not from its broker (us)."""
+    identity = SlicerIdentity(MAINBOARD_ID, PROXY_IP)
+    identity.slicer_link = SlicerBroker(SLICER_IP, 49610)
+    request = {
+        "Data": {
+            "Cmd": 256,
+            "Data": {"URL": "http://${ipaddr}:58883/model.ctb", "FileSize": 1},
+            "MainboardID": ALIAS_ID,
+        }
+    }
+    forwarded = json.loads(identity.for_printer(json.dumps(request)))["Data"]
+    assert forwarded["Data"]["URL"] == f"http://{SLICER_IP}:58883/model.ctb"
+    assert forwarded["MainboardID"] == MAINBOARD_ID
 
 
 @pytest.mark.parametrize(
