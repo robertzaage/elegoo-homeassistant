@@ -68,7 +68,9 @@ Older networked models typically use MQTT. These are supported in **Beta**, mean
 * **Jupiter Range**
 
 **Known Limitations for MQTT:**
-* `Begin Time`, `End Time`, and `Cover Image` sensors will show "Unknown."
+* These printers keep no job history. `Begin Time` and `End Time` are derived from the elapsed and remaining print time; a print that finished before Home Assistant started shows no times.
+* There is no `Cover Image`, and no `Error Status Reason` sensor (`Print Error` covers the printer's error code).
+* `File Transfer` and `File Transfer Progress` show a job being sent to the printer.
 * Standard sensors (status, layers, temps, progress) function normally.
 
 ### 🆕 CC2 FDM Printers (LAN-Only Connection)

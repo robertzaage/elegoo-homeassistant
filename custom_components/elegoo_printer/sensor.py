@@ -20,6 +20,8 @@ from .definitions import (
     PRINTER_STATUS_GCODE_PROXY_FILAMENT,
     PRINTER_STATUS_RESIN,
     PRINTER_STATUS_RESIN_VAT_HEATER,
+    PRINTER_STATUS_V1,
+    V1_UNSUPPORTED_SENSOR_KEYS,
     ElegooPrinterSensorEntityDescription,
 )
 from .entity import ElegooPrinterEntity
@@ -63,6 +65,11 @@ async def async_setup_entry(
     # V3-only attributes (WebSocket/SDCP printers)
     if protocol_version == ProtocolVersion.V3:
         sensors.extend(PRINTER_ATTRIBUTES_V3_ONLY)
+
+    # V1 (MQTT) printers: file transfer progress, no task-history sensors
+    if protocol_version == ProtocolVersion.V1:
+        sensors = [s for s in sensors if s.key not in V1_UNSUPPORTED_SENSOR_KEYS]
+        sensors.extend(PRINTER_STATUS_V1)
 
     # Type-specific sensors (both V1 and V3)
     if printer_type == PrinterType.FDM:

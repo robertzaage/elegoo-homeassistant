@@ -259,6 +259,18 @@
       },
       "end_time": {
         "name": "終了時間"
+      },
+      "file_transfer": {
+        "name": "ファイル転送",
+        "state": {
+          "idle": "待機中",
+          "transferring": "転送中",
+          "completed": "完了",
+          "failed": "失敗"
+        }
+      },
+      "file_transfer_progress": {
+        "name": "ファイル転送の進捗"
       }
     },
     "select": {

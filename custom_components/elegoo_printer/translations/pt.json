@@ -259,6 +259,18 @@
       },
       "end_time": {
         "name": "Hora Final"
+      },
+      "file_transfer": {
+        "name": "Transferência de ficheiro",
+        "state": {
+          "idle": "Inativa",
+          "transferring": "A transferir",
+          "completed": "Concluída",
+          "failed": "Falhou"
+        }
+      },
+      "file_transfer_progress": {
+        "name": "Progresso da transferência de ficheiro"
       }
     },
     "select": {

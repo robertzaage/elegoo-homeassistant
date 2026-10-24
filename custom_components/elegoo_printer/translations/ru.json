@@ -259,6 +259,18 @@
       },
       "end_time": {
         "name": "Время окончания"
+      },
+      "file_transfer": {
+        "name": "Передача файла",
+        "state": {
+          "idle": "Ожидание",
+          "transferring": "Передача",
+          "completed": "Завершено",
+          "failed": "Ошибка"
+        }
+      },
+      "file_transfer_progress": {
+        "name": "Ход передачи файла"
       }
     },
     "select": {

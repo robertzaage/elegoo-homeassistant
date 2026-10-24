@@ -888,6 +888,38 @@ PRINTER_STATUS_RESIN: tuple[ElegooPrinterSensorEntityDescription, ...] = (
 
 
 # Resin sensors only available on printers with vat heating
+# V1 (MQTT) printers: the printer downloads jobs itself and reports progress.
+PRINTER_STATUS_V1: tuple[ElegooPrinterSensorEntityDescription, ...] = (
+    ElegooPrinterSensorEntityDescription(
+        key="file_transfer",
+        translation_key="file_transfer",
+        name="File Transfer",
+        icon="mdi:file-upload",
+        device_class=SensorDeviceClass.ENUM,
+        options=["idle", "transferring", "completed", "failed"],
+        value_fn=lambda printer_data: (
+            printer_data.status.file_transfer_info.state
+            if printer_data and printer_data.status
+            else None
+        ),
+    ),
+    ElegooPrinterSensorEntityDescription(
+        key="file_transfer_progress",
+        translation_key="file_transfer_progress",
+        name="File Transfer Progress",
+        icon="mdi:progress-upload",
+        native_unit_of_measurement=PERCENTAGE,
+        value_fn=lambda printer_data: (
+            printer_data.status.file_transfer_info.progress
+            if printer_data and printer_data.status
+            else None
+        ),
+    ),
+)
+
+# Keys that need the task history, which V1 (MQTT) printers do not keep.
+V1_UNSUPPORTED_SENSOR_KEYS = frozenset({"current_print_error_status_reason"})
+
 PRINTER_STATUS_RESIN_VAT_HEATER: tuple[ElegooPrinterSensorEntityDescription, ...] = (
     # --- Current Vat Temperature Sensor ---
     ElegooPrinterSensorEntityDescription(

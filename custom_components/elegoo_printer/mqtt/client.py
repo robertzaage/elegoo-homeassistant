@@ -43,6 +43,10 @@ from custom_components.elegoo_printer.sdcp.exceptions import (
     ElegooPrinterNotConnectedError,
     ElegooPrinterTimeoutError,
 )
+from custom_components.elegoo_printer.sdcp.models.enums import ElegooMachineStatus
+from custom_components.elegoo_printer.sdcp.models.print_history_detail import (
+    PrintHistoryDetail,
+)
 from custom_components.elegoo_printer.sdcp.models.printer import (
     Printer,
 )
@@ -70,9 +74,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
 
     from custom_components.elegoo_printer.sdcp.models.enums import ElegooFan
-    from custom_components.elegoo_printer.sdcp.models.print_history_detail import (
-        PrintHistoryDetail,
-    )
     from custom_components.elegoo_printer.sdcp.models.printer import PrinterData
     from custom_components.elegoo_printer.sdcp.models.status import LightStatus
     from custom_components.elegoo_printer.sdcp.types import SDCPFrame
@@ -119,6 +120,10 @@ class ElegooMQTTClient(SdcpPrinterClient):
         self.mqtt_client: aiomqtt.Client | None = None
         super().__init__(logger, printer or Printer())
         self._client_factory = client_factory
+        # V1 printers keep no task history; the current job is built from
+        # the status (see async_get_printer_current_task).
+        self._status_job: PrintHistoryDetail | None = None
+        self._status_job_ticks = 0
 
     def _transport_open(self) -> bool:
         """Report whether the mqtt transport is usable (client object exists)."""
@@ -426,36 +431,41 @@ class ElegooMQTTClient(SdcpPrinterClient):
 
     async def async_get_printer_current_task(self) -> PrintHistoryDetail | None:
         """
-        Asynchronously retrieve the current print task details from the printer.
+        Return the current print job, described from the status.
 
-        MQTT printers do not send TaskId in their status messages, so task
-        details (begin_time, end_time, thumbnail) are not available.
+        V1 (MQTT) printers keep no task history and send no TaskId, so the
+        job is built from what the status carries: the file name and the
+        elapsed print time. Begin and end time are then derived from the
+        elapsed and remaining time, as for printers without a begin time of
+        their own. A new job starts when the file name changes or the elapsed
+        time goes backwards (the same file printed again).
 
-        Returns:
-            The details of the current print task if available, otherwise None.
-
+        Only a running print starts a job: after a restart that follows a
+        finished print, the elapsed time no longer tells when it began.
         """
-        task_id = self.printer_data.status.print_info.task_id
-        if not task_id:
-            # MQTT printers don't send TaskId in PrintInfo status messages
-            # Task details (begin_time, end_time, thumbnail) are not available
-            self.logger.debug(
-                "No task_id in status (normal for MQTT printers), skipping task fetch"
-            )
-            return None
-
-        self.logger.debug("Requesting task details for task_id: %s", task_id)
-        task = await self.get_printer_task_detail([task_id])
-        if task:
-            self.logger.debug(
-                "Got task from printer: task_id=%s, begin_time=%s, end_time=%s",
-                task.task_id,
-                task.begin_time,
-                task.end_time,
-            )
-        else:
-            self.logger.debug("NO TASK RETURNED FROM PRINTER for task_id: %s", task_id)
-        return task
+        print_info = self.printer_data.status.print_info
+        filename = print_info.filename
+        ticks = print_info.current_ticks or 0
+        job = self._status_job
+        if (
+            not filename
+            or job is None
+            or job.task_name != filename
+            or ticks < self._status_job_ticks
+        ):
+            job = None
+            if (
+                filename
+                and self.printer_data.status.current_status
+                == ElegooMachineStatus.PRINTING
+            ):
+                job = PrintHistoryDetail(
+                    {"TaskName": filename, "TaskId": f"{filename}@{ticks}"}
+                )
+                self.logger.debug("New print job from status: %s", job.task_id)
+            self._status_job = job
+        self._status_job_ticks = ticks
+        return job
 
     async def async_get_current_print_thumbnail(self) -> str | None:
         """

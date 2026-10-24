@@ -259,6 +259,18 @@
       },
       "end_time": {
         "name": "Doba ukončení"
+      },
+      "file_transfer": {
+        "name": "Přenos souboru",
+        "state": {
+          "idle": "Nečinný",
+          "transferring": "Probíhá přenos",
+          "completed": "Dokončeno",
+          "failed": "Selhalo"
+        }
+      },
+      "file_transfer_progress": {
+        "name": "Průběh přenosu souboru"
       }
     },
     "select": {

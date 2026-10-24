@@ -259,6 +259,18 @@
       },
       "end_time": {
         "name": "Czas Końcowy"
+      },
+      "file_transfer": {
+        "name": "Przesyłanie pliku",
+        "state": {
+          "idle": "Bezczynny",
+          "transferring": "Przesyłanie",
+          "completed": "Zakończono",
+          "failed": "Niepowodzenie"
+        }
+      },
+      "file_transfer_progress": {
+        "name": "Postęp przesyłania pliku"
       }
     },
     "select": {
