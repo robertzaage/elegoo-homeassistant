@@ -318,6 +318,12 @@ async def _next(client: aiomqtt.Client, wait: float = 3.0) -> tuple[str, dict]:
     return str(message.topic), json.loads(message.payload)
 
 
+async def _skip_connect_requests(printer: aiomqtt.Client) -> None:
+    """Consume the attribute and status requests the bridge sends on connect."""
+    for _ in range(2):
+        await _next(printer)
+
+
 async def _wait_for(predicate: Callable[[], bool], wait: float = 3.0) -> None:
     step = 0.02
     for _ in range(int(wait / step)):
@@ -345,7 +351,7 @@ async def test_bridge_passes_traffic_both_ways(brokers) -> None:
 
         proxy._start_bridge(SlicerBroker("127.0.0.1", slicer_broker.port))
         await _wait_for(lambda: proxy.slicer_connected)
-        await asyncio.sleep(0.2)  # let the bridge's subscriptions land
+        await _skip_connect_requests(printer)
 
         # Slicer → printer
         await slicer.publish(_topic("request", ALIAS_ID), _request(1, "req-attr"))
@@ -386,7 +392,7 @@ async def test_bridge_answers_period_and_disconnect_itself(brokers) -> None:
 
         proxy._start_bridge(SlicerBroker("127.0.0.1", slicer_broker.port))
         await _wait_for(lambda: proxy.slicer_connected)
-        await asyncio.sleep(0.2)
+        await _skip_connect_requests(printer)
 
         await slicer.publish(
             _topic("request", ALIAS_ID),
@@ -434,5 +440,32 @@ async def test_bridge_replays_latest_state_to_a_new_slicer(brokers) -> None:
         }
         name = received[_topic("attributes", ALIAS_ID)]["Data"]["Attributes"]["Name"]
         assert name == f"Mars{SLICER_NAME_SUFFIX}"
+
+        await proxy.stop()
+
+
+async def test_bridge_asks_the_printer_for_attributes_on_connect(brokers) -> None:
+    """ChiTuBox waits for attributes; a real printer sends them on connect."""
+    ha_broker, slicer_broker = brokers
+    proxy = _proxy(ha_broker.port)
+
+    async with (
+        aiomqtt.Client("127.0.0.1", ha_broker.port, identifier="printer") as printer,
+        aiomqtt.Client(
+            "127.0.0.1", slicer_broker.port, identifier="chitubox"
+        ) as slicer,
+    ):
+        await printer.subscribe(_topic("request"))
+        await slicer.subscribe(_topic("attributes", ALIAS_ID))
+        proxy._start_bridge(SlicerBroker("127.0.0.1", slicer_broker.port))
+
+        commands = [(await _next(printer))[1]["Data"]["Cmd"] for _ in range(2)]
+        assert commands == [1, 0]
+
+        attributes = {"Data": {"Attributes": {"Name": "Mars"}}}
+        await printer.publish(_topic("attributes"), json.dumps(attributes))
+        topic, frame = await _next(slicer)
+        assert topic == _topic("attributes", ALIAS_ID)
+        assert frame["Data"]["Attributes"]["Name"] == f"Mars{SLICER_NAME_SUFFIX}"
 
         await proxy.stop()
