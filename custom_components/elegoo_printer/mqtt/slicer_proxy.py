@@ -341,6 +341,11 @@ class FileRelay:
                     await response.write(chunk)
                 await response.write_eof()
                 return response
+        except ConnectionResetError:
+            # The printer opens a probe connection and closes it right away
+            # before the real download; nothing to report.
+            self.logger.debug("Slicer proxy: printer closed a download of %s", url)
+            return web.Response(status=499)
         except (ClientError, TimeoutError) as err:
             self.logger.warning("Slicer proxy: file from %s failed: %s", url, err)
             return web.Response(status=502)
