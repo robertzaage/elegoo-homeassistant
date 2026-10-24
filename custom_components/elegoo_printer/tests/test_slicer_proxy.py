@@ -551,6 +551,9 @@ async def test_bridge_sends_uploads_through_the_relay(brokers) -> None:
 async def test_upload_keeps_the_files_preview_as_cover(tmp_path: Path) -> None:
     """The proxy reads the preview of every file a slicer sends."""
     from custom_components.elegoo_printer.tests.test_ctb_preview import (  # noqa: PLC0415
+        EXPECTED_RGBA,
+        HEIGHT,
+        WIDTH,
         _encrypted_ctb,
         _png_pixels,
     )
@@ -579,7 +582,7 @@ async def test_upload_keeps_the_files_preview_as_cover(tmp_path: Path) -> None:
         proxy._relay_upload(proxy.identity.for_printer(upload))
         await _wait_for(lambda: proxy.cover is not None)
         assert proxy.cover.filename == "model.ctb"
-        assert _png_pixels(proxy.cover.png)[:2] == (6, 4)
+        assert _png_pixels(proxy.cover.png) == (WIDTH, HEIGHT, EXPECTED_RGBA)
     finally:
         await proxy.stop()
         await proxy._relay.stop()

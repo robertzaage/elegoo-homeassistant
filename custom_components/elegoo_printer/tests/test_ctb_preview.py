@@ -19,6 +19,7 @@ from custom_components.elegoo_printer.mqtt.ctb_preview import (
     MAGIC_CTB,
     MAGIC_CTB_ENCRYPTED,
     PreviewError,
+    background_alpha,
     decode_rgb15_rle,
     encode_png,
     fetch_preview_png,
@@ -29,10 +30,25 @@ from custom_components.elegoo_printer.mqtt.ctb_preview import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-WIDTH, HEIGHT = 6, 4
-# Two colour bands, so the encoding needs runs: 12 red, then 12 blue pixels.
-RED, BLUE = (248, 0, 0), (0, 0, 248)
-PIXELS = [RED] * 12 + [BLUE] * 12
+# A blue model with a red dot on a white background. The white pixel inside
+# the model is enclosed, so it must stay opaque.
+W, B, R = (248, 248, 248), (0, 0, 248), (248, 0, 0)
+IMAGE = [
+    [W, W, W, W, W, W, W],
+    [W, B, B, B, B, B, W],
+    [W, B, W, R, B, B, W],
+    [W, B, B, B, B, B, W],
+    [W, W, W, W, W, W, W],
+]
+OPAQUE = [
+    [0, 0, 0, 0, 0, 0, 0],
+    [0, 1, 1, 1, 1, 1, 0],
+    [0, 1, 1, 1, 1, 1, 0],
+    [0, 1, 1, 1, 1, 1, 0],
+    [0, 0, 0, 0, 0, 0, 0],
+]
+WIDTH, HEIGHT = len(IMAGE[0]), len(IMAGE)
+PIXELS = [p for row in IMAGE for p in row]
 
 
 def _encode_rle(pixels: list[tuple[int, int, int]]) -> bytes:
@@ -77,17 +93,22 @@ def _plain_ctb() -> bytes:
 
 
 def _png_pixels(png: bytes) -> tuple[int, int, bytes]:
-    """Read width, height and RGB rows back from our own PNG."""
+    """Read width, height and RGBA rows back from our own PNG."""
     assert png.startswith(b"\x89PNG\r\n\x1a\n")
     width, height = struct.unpack(">II", png[16:24])
     idat_len = struct.unpack(">I", png[33:37])[0]
     raw = zlib.decompress(png[41 : 41 + idat_len])
-    stride = width * 3 + 1
+    assert png[24:26] == b"\x08\x06"  # 8 bit, RGBA
+    stride = width * 4 + 1
     rows = b"".join(raw[r * stride + 1 : (r + 1) * stride] for r in range(height))
     return width, height, rows
 
 
 EXPECTED_RGB = b"".join(bytes(p) for p in PIXELS)
+EXPECTED_RGBA = b"".join(
+    bytes((*p, 0xFF if o else 0))
+    for p, o in zip(PIXELS, (o for row in OPAQUE for o in row), strict=True)
+)
 
 
 def test_decode_matches_the_encoded_image() -> None:
@@ -97,16 +118,28 @@ def test_decode_matches_the_encoded_image() -> None:
 
 def test_decode_never_writes_past_the_image() -> None:
     """A run longer than the image is cut off, not an overflow."""
-    too_long = _encode_rle([RED] * 100)
-    assert decode_rgb15_rle(too_long, WIDTH, HEIGHT) == bytes(RED) * 24
+    too_long = _encode_rle([R] * 100)
+    assert decode_rgb15_rle(too_long, WIDTH, HEIGHT) == bytes(R) * WIDTH * HEIGHT
+
+
+def test_background_becomes_transparent() -> None:
+    """Only the background connected to the border is cleared."""
+    assert background_alpha(WIDTH, HEIGHT, EXPECTED_RGB) == EXPECTED_RGBA
+
+
+def test_soft_edges_are_cleared_with_the_background() -> None:
+    """A pixel close to the background colour counts as background."""
+    rgb = bytearray(EXPECTED_RGB)
+    rgb[3:6] = bytes((232, 240, 248))  # light grey, top row
+    assert background_alpha(WIDTH, HEIGHT, bytes(rgb))[7] == 0
 
 
 def test_png_round_trip() -> None:
-    """The PNG holds exactly the decoded pixels."""
-    assert _png_pixels(encode_png(WIDTH, HEIGHT, EXPECTED_RGB)) == (
+    """The PNG holds exactly the given pixels."""
+    assert _png_pixels(encode_png(WIDTH, HEIGHT, EXPECTED_RGBA)) == (
         WIDTH,
         HEIGHT,
-        EXPECTED_RGB,
+        EXPECTED_RGBA,
     )
 
 
@@ -159,4 +192,4 @@ async def test_fetch_preview_png(file_server: str, name: str) -> None:
     """Three ranged requests turn a sliced file into its preview PNG."""
     async with ClientSession() as session:
         png = await fetch_preview_png(session, f"{file_server}/{name}")
-    assert _png_pixels(png) == (WIDTH, HEIGHT, EXPECTED_RGB)
+    assert _png_pixels(png) == (WIDTH, HEIGHT, EXPECTED_RGBA)

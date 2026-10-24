@@ -15,10 +15,14 @@ https://github.com/sn4k3/UVtools):
 
 At that offset a preview header (width, height, data offset, data length)
 precedes the image, a 16-bit RGB555 run-length encoding.
+
+The slicer renders the model on a plain background. That background is made
+transparent, so the image fits any dashboard theme.
 """
 
 from __future__ import annotations
 
+import asyncio
 import struct
 import zlib
 from typing import TYPE_CHECKING
@@ -38,6 +42,8 @@ PREVIEW_HEADER_SIZE = 16
 MAX_PREVIEW_SIDE = 2048
 MAX_PREVIEW_BYTES = 4 * 1024 * 1024
 _REPEAT_FLAG = 0x20
+# Per channel; allows for the RGB555 rounding and the model's soft edges.
+BACKGROUND_TOLERANCE = 24
 
 
 class PreviewError(ValueError):
@@ -107,8 +113,58 @@ def decode_rgb15_rle(data: bytes, width: int, height: int) -> bytes:
     return bytes(out)
 
 
-def encode_png(width: int, height: int, rgb: bytes) -> bytes:
-    """Encode 8-bit RGB as PNG with the standard library."""
+def background_alpha(width: int, height: int, rgb: bytes) -> bytes:
+    """
+    Return RGBA with the background around the model made transparent.
+
+    The background is the colour most corners share. Starting from every
+    border pixel of that colour, a flood fill clears all connected pixels
+    close to it. Pixels enclosed by the model keep their colour, so a model
+    part that happens to match the background is not cut out.
+    """
+    count = width * height
+    corners = [rgb[i * 3 : i * 3 + 3] for i in (0, width - 1, count - width, count - 1)]
+    background = max(corners, key=corners.count)
+
+    def is_background(i: int) -> bool:
+        return all(
+            abs(rgb[i * 3 + c] - background[c]) <= BACKGROUND_TOLERANCE
+            for c in range(3)
+        )
+
+    clear = bytearray(count)
+    border = [
+        *range(width),
+        *range(count - width, count),
+        *range(0, count, width),
+        *range(width - 1, count, width),
+    ]
+    stack = [i for i in border if is_background(i)]
+    for i in stack:
+        clear[i] = 1
+    while stack:
+        i = stack.pop()
+        x = i % width
+        neighbours = (
+            i - width if i >= width else -1,
+            i + width if i + width < count else -1,
+            i - 1 if x > 0 else -1,
+            i + 1 if x < width - 1 else -1,
+        )
+        for n in neighbours:
+            if n >= 0 and not clear[n] and is_background(n):
+                clear[n] = 1
+                stack.append(n)
+
+    out = bytearray(count * 4)
+    for i in range(count):
+        out[i * 4 : i * 4 + 3] = rgb[i * 3 : i * 3 + 3]
+        out[i * 4 + 3] = 0 if clear[i] else 0xFF
+    return bytes(out)
+
+
+def encode_png(width: int, height: int, rgba: bytes) -> bytes:
+    """Encode 8-bit RGBA as PNG with the standard library."""
 
     def chunk(kind: bytes, body: bytes) -> bytes:
         return (
@@ -118,13 +174,13 @@ def encode_png(width: int, height: int, rgb: bytes) -> bytes:
             + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
         )
 
-    stride = width * 3
+    stride = width * 4
     raw = b"".join(
-        b"\x00" + rgb[row * stride : (row + 1) * stride] for row in range(height)
+        b"\x00" + rgba[row * stride : (row + 1) * stride] for row in range(height)
     )
     return (
         b"\x89PNG\r\n\x1a\n"
-        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
         + chunk(b"IDAT", zlib.compress(raw, 6))
         + chunk(b"IEND", b"")
     )
@@ -146,5 +202,13 @@ async def fetch_preview_png(session: ClientSession, url: str) -> bytes:
     width, height, offset, length = parse_preview_header(
         await read(at, PREVIEW_HEADER_SIZE), at
     )
-    rgb = decode_rgb15_rle(await read(offset, length), width, height)
-    return encode_png(width, height, rgb)
+    data = await read(offset, length)
+    return await asyncio.get_running_loop().run_in_executor(
+        None, preview_png, data, width, height
+    )
+
+
+def preview_png(data: bytes, width: int, height: int) -> bytes:
+    """Decode a preview to PNG with a transparent background (CPU-bound)."""
+    rgb = decode_rgb15_rle(data, width, height)
+    return encode_png(width, height, background_alpha(width, height, rgb))
