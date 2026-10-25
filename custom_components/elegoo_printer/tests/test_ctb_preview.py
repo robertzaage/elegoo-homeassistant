@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 # A blue model with a red dot on a white background. The white pixel inside
-# the model is enclosed, so it must stay opaque.
+# the model is background seen through a hole.
 W, B, R = (248, 248, 248), (0, 0, 248), (248, 0, 0)
 IMAGE = [
     [W, W, W, W, W, W, W],
@@ -43,7 +43,7 @@ IMAGE = [
 OPAQUE = [
     [0, 0, 0, 0, 0, 0, 0],
     [0, 1, 1, 1, 1, 1, 0],
-    [0, 1, 1, 1, 1, 1, 0],
+    [0, 1, 0, 1, 1, 1, 0],
     [0, 1, 1, 1, 1, 1, 0],
     [0, 0, 0, 0, 0, 0, 0],
 ]
@@ -123,7 +123,7 @@ def test_decode_never_writes_past_the_image() -> None:
 
 
 def test_background_becomes_transparent() -> None:
-    """Only the background connected to the border is cleared."""
+    """The background around the model and in its holes is cleared."""
     assert background_alpha(WIDTH, HEIGHT, EXPECTED_RGB) == EXPECTED_RGBA
 
 
@@ -132,6 +132,14 @@ def test_soft_edges_are_cleared_with_the_background() -> None:
     rgb = bytearray(EXPECTED_RGB)
     rgb[3:6] = bytes((232, 240, 248))  # light grey, top row
     assert background_alpha(WIDTH, HEIGHT, bytes(rgb))[7] == 0
+
+
+def test_light_model_parts_away_from_the_background_stay() -> None:
+    """A near-background colour inside the model is not cleared."""
+    rgb = bytearray(EXPECTED_RGB)
+    at = 2 * WIDTH + 4  # model pixel, not next to any background
+    rgb[at * 3 : at * 3 + 3] = bytes((232, 240, 248))
+    assert background_alpha(WIDTH, HEIGHT, bytes(rgb))[at * 4 + 3] == 0xFF
 
 
 def test_png_round_trip() -> None:
