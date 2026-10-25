@@ -117,10 +117,10 @@ def background_alpha(width: int, height: int, rgb: bytes) -> bytes:
     """
     Return RGBA with the background around the model made transparent.
 
-    The background is the colour most corners share. Starting from every
-    border pixel of that colour, a flood fill clears all connected pixels
-    close to it. Pixels enclosed by the model keep their colour, so a model
-    part that happens to match the background is not cut out.
+    The background is the colour most corners share. The slicer shades the
+    model, so every pixel of exactly that colour is background, including
+    what shows through holes in the model. From there a flood fill also
+    clears the neighbouring pixels close to it: the model's soft edges.
     """
     count = width * height
     corners = [rgb[i * 3 : i * 3 + 3] for i in (0, width - 1, count - width, count - 1)]
@@ -133,13 +133,7 @@ def background_alpha(width: int, height: int, rgb: bytes) -> bytes:
         )
 
     clear = bytearray(count)
-    border = [
-        *range(width),
-        *range(count - width, count),
-        *range(0, count, width),
-        *range(width - 1, count, width),
-    ]
-    stack = [i for i in border if is_background(i)]
+    stack = [i for i in range(count) if rgb[i * 3 : i * 3 + 3] == background]
     for i in stack:
         clear[i] = 1
     while stack:
